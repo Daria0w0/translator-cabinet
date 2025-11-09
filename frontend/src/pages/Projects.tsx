@@ -1,10 +1,25 @@
 import React, { useState, ChangeEvent, FormEvent, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { getProjects, createProject, deleteProject, Project } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Projects() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const { user } = useAuth();
+  
+  const [newProject, setNewProject] = useState({
+    name: '',
+    description: '',
+    sourceLang: 'Английский',
+    targetLang: 'Русский',
+  });
+
+  const [errors, setErrors] = useState({
+    name: '',
+    general: ''
+  });
 
   useEffect(() => {
     loadProjects();
@@ -16,39 +31,38 @@ export default function Projects() {
       setProjects(projectsData);
     } catch (error) {
       console.error('Ошибка:', error);
-      alert('Не удалось загрузить проекты. Убедитесь, что бэкенд запущен.');
+      setErrors(prev => ({...prev, general: 'Не удалось загрузить проекты'}));
     } finally {
       setLoading(false);
     }
   };
 
-  const [adding, setAdding] = useState(false);
-  const [newProject, setNewProject] = useState({
-    name: '',
-    description: '',
-    sourceLang: 'Английский',
-    targetLang: 'Русский',
-    file: null as File | null,
-  });
+  const validateForm = () => {
+    const newErrors = { name: '', general: '' };
+    
+    if (!newProject.name.trim()) {
+      newErrors.name = 'Название проекта обязательно';
+    } else if (newProject.name.trim().length < 2) {
+      newErrors.name = 'Название должно быть не менее 2 символов';
+    }
+
+    setErrors(newErrors);
+    return !newErrors.name && !newErrors.general;
+  };
 
   const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setNewProject(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setNewProject(prev => ({ ...prev, file: e.target.files![0] }));
+    // Очищаем ошибку при изменении поля
+    if (errors[name as keyof typeof errors]) {
+      setErrors(prev => ({...prev, [name]: ''}));
     }
   };
 
   const handleAddProject = async (e: FormEvent) => {
     e.preventDefault();
 
-    if (!newProject.name.trim()) {
-      alert('Пожалуйста, введите название проекта');
-      return;
-    }
+    if (!validateForm()) return;
 
     try {
       const projectToCreate = {
@@ -56,12 +70,10 @@ export default function Projects() {
         description: newProject.description.trim(),
         sourceLang: newProject.sourceLang,
         targetLang: newProject.targetLang,
-        fileName: newProject.file ? newProject.file.name : undefined,
         status: 'Новый',
       };
 
       const createdProject = await createProject(projectToCreate);
-
       setProjects(prev => [...prev, createdProject]);
 
       setNewProject({
@@ -69,14 +81,11 @@ export default function Projects() {
         description: '',
         sourceLang: 'Английский',
         targetLang: 'Русский',
-        file: null,
       });
       setAdding(false);
-
-      alert('Проект успешно создан!');
+      setErrors({ name: '', general: '' });
     } catch (error) {
-      console.error('Ошибка:', error);
-      alert('Не удалось создать проект. Проверьте подключение к бэкенду.');
+      setErrors(prev => ({...prev, general: 'Не удалось создать проект'}));
     }
   };
 
@@ -87,8 +96,8 @@ export default function Projects() {
       description: '',
       sourceLang: 'Английский',
       targetLang: 'Русский',
-      file: null,
     });
+    setErrors({ name: '', general: '' });
   };
 
   const handleDeleteProject = async (id: number) => {
@@ -98,111 +107,219 @@ export default function Projects() {
     try {
       await deleteProject(id);
       setProjects(prev => prev.filter(project => project.id !== id));
-      alert("Проект успешно удалён");
     } catch (error) {
-      console.error("Ошибка:", error);
-      alert("Не удалось удалить проект. Проверьте подключение к бэкенду.");
+      setErrors(prev => ({...prev, general: 'Не удалось удалить проект'}));
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'новый': return '#7c3aed';
+      case 'в работе': return '#d97706';
+      case 'завершен': return '#059669';
+      default: return '#656d76';
     }
   };
 
   if (loading) {
-    return <div className="page projects-page">Загрузка проектов...</div>;
+    return (
+      <div className="page projects-page">
+        <div className="loading">Загрузка проектов...</div>
+      </div>
+    );
   }
 
   return (
     <div className="page projects-page">
-      <h1>Мои проекты</h1>
-
-      {projects.map(project => (
-        <div key={project.id} className="project-card">
-          <h2>{project.name} (ID: {project.id})</h2>
-          <p><strong>Описание:</strong> {project.description}</p>
-          <p><strong>Исходный язык:</strong> {project.sourceLang}</p>
-          <p><strong>Язык перевода:</strong> {project.targetLang}</p>
-          {project.fileName && <p><strong>Файл:</strong> {project.fileName}</p>}
-          <p><strong>Статус:</strong> {project.status}</p>
-
-          <Link
-            to={`/projects/edit/${project.id}`}
-            className="btn-link"
-            style={{ marginTop: '10px', display: 'inline-block', marginRight: '10px' }}
-          >
-            Редактировать
-          </Link>
-
-          <button
-            className="btn-link"
-            style={{ marginTop: '10px', display: 'inline-block' }}
-            onClick={() => handleDeleteProject(project.id)}
-          >
-            Удалить
-          </button>
+      <div className="page-header">
+        <div className="header-content">
+          <h1>Мои проекты</h1>
+          <p>Управляйте вашими проектами перевода</p>
         </div>
-      ))}
+        {!adding && (
+          <button 
+            className="btn-primary" 
+            onClick={() => setAdding(true)}
+          >
+            + Новый проект
+          </button>
+        )}
+      </div>
 
-      {!adding && (
-        <button className="btn-link" style={{ marginTop: '20px' }} onClick={() => setAdding(true)}>
-          Добавить проект
-        </button>
+      {errors.general && (
+        <div className="error-message">{errors.general}</div>
       )}
 
-      {adding && (
-        <form className="project-card add-project-form" onSubmit={handleAddProject} style={{ marginTop: '20px' }}>
-          <h2>Новый проект</h2>
-
-          <label>
-            Название проекта:
-            <input
-              type="text"
-              name="name"
-              value={newProject.name}
-              onChange={handleChange}
-              required
-              className="input-text"
-            />
-          </label>
-
-          <label>
-            Описание:
-            <textarea
-              name="description"
-              value={newProject.description}
-              onChange={handleChange}
-              rows={3}
-              className="input-textarea"
-            />
-          </label>
-
-          <label>
-            Исходный язык:
-            <select name="sourceLang" value={newProject.sourceLang} onChange={handleChange} className="input-select">
-              <option>Английский</option>
-              <option>Русский</option>
-            </select>
-          </label>
-
-          <label>
-            Язык перевода:
-            <select name="targetLang" value={newProject.targetLang} onChange={handleChange} className="input-select">
-              <option>Английский</option>
-              <option>Русский</option>
-            </select>
-          </label>
-
-          <label>
-            Загрузить файл:
-            <input type="file" onChange={handleFileChange} />
-          </label>
-
-          <div style={{ marginTop: '10px' }}>
-            <button type="submit" className="btn-link" style={{ marginRight: '10px' }}>
-              Добавить
-            </button>
-            <button type="button" className="btn-link btn-cancel" onClick={handleCancel}>
-              Отменить
-            </button>
+      {!user ? (
+        <div className="auth-warning">
+          <h3>Требуется авторизация</h3>
+          <p>Для просмотра и управления проектами необходимо войти в систему</p>
+          <Link to="/login" className="btn-primary">
+            Войти в систему
+          </Link>
+        </div>
+      ) : (
+        <>
+          <div className="projects-stats">
+            <div className="stat-card">
+              <div className="stat-number">{projects.length}</div>
+              <div className="stat-label">Всего проектов</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-number">
+                {projects.filter(p => p.status === 'Новый').length}
+              </div>
+              <div className="stat-label">Новых</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-number">
+                {projects.filter(p => p.status === 'Завершен').length}
+              </div>
+              <div className="stat-label">Завершено</div>
+            </div>
           </div>
-        </form>
+
+          <div className="projects-grid">
+            {projects.map(project => (
+              <div key={project.id} className="project-card">
+                <div className="project-header">
+                  <h2>{project.name}</h2>
+                  <span 
+                    className="project-status"
+                    style={{ backgroundColor: getStatusColor(project.status) }}
+                  >
+                    {project.status}
+                  </span>
+                </div>
+                
+                {project.description && (
+                  <p className="project-description">{project.description}</p>
+                )}
+                
+                <div className="project-details">
+                  <div className="language-pair">
+                    <span className="source-lang">{project.sourceLang}</span>
+                    <span className="arrow">→</span>
+                    <span className="target-lang">{project.targetLang}</span>
+                  </div>
+                  <div className="project-id">ID: {project.id}</div>
+                </div>
+
+                <div className="project-actions">
+                  <Link
+                    to={`/projects/edit/${project.id}`}
+                    className="btn-secondary"
+                  >
+                    Открыть
+                  </Link>
+                  <button
+                    className="btn-danger"
+                    onClick={() => handleDeleteProject(project.id)}
+                  >
+                    Удалить
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {adding && (
+            <div className="modal-overlay">
+              <div className="modal">
+                <form className="add-project-form" onSubmit={handleAddProject}>
+                  <div className="modal-header">
+                    <h2>Создать новый проект</h2>
+                    <button type="button" className="close-btn" onClick={handleCancel}>×</button>
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="name">Название проекта *</label>
+                    <input
+                      id="name"
+                      type="text"
+                      name="name"
+                      value={newProject.name}
+                      onChange={handleChange}
+                      required
+                      placeholder="Введите название проекта"
+                      className={errors.name ? 'error' : ''}
+                    />
+                    {errors.name && <span className="field-error">{errors.name}</span>}
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="description">Описание</label>
+                    <textarea
+                      id="description"
+                      name="description"
+                      value={newProject.description}
+                      onChange={handleChange}
+                      rows={3}
+                      placeholder="Опишите ваш проект..."
+                    />
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label htmlFor="sourceLang">Исходный язык</label>
+                      <select 
+                        id="sourceLang"
+                        name="sourceLang" 
+                        value={newProject.sourceLang} 
+                        onChange={handleChange}
+                      >
+                        <option>Английский</option>
+                        <option>Русский</option>
+                        <option>Французский</option>
+                        <option>Немецкий</option>
+                        <option>Испанский</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="targetLang">Язык перевода</label>
+                      <select 
+                        id="targetLang"
+                        name="targetLang" 
+                        value={newProject.targetLang} 
+                        onChange={handleChange}
+                      >
+                        <option>Русский</option>
+                        <option>Английский</option>
+                        <option>Французский</option>
+                        <option>Немецкий</option>
+                        <option>Испанский</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="form-actions">
+                    <button type="submit" className="btn-primary">
+                      Создать проект
+                    </button>
+                    <button type="button" className="btn-secondary" onClick={handleCancel}>
+                      Отменить
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {projects.length === 0 && !adding && (
+            <div className="empty-state">
+              <div className="empty-icon">📁</div>
+              <h3>Проектов пока нет</h3>
+              <p>Создайте свой первый проект перевода</p>
+              <button 
+                className="btn-primary" 
+                onClick={() => setAdding(true)}
+              >
+                Создать проект
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
