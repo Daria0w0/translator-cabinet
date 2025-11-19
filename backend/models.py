@@ -1,5 +1,21 @@
-from sqlalchemy import Column, Integer, String, Text
+from datetime import datetime, timezone
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import relationship
 from database import Base
+
+class User(Base):
+    __tablename__ = "users"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    username = Column(String(100), unique=True, index=True, nullable=False)
+    hashed_password = Column(String(255), nullable=False)
+    full_name = Column(String(200))
+    is_translator = Column(Boolean, default=False)
+    is_editor = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True)
+
+    projects = relationship("Project", back_populates="owner", cascade="all, delete-orphan")
 
 class Project(Base):
     __tablename__ = "projects" 
@@ -11,3 +27,22 @@ class Project(Base):
     target_lang = Column(String(50), nullable=False)
     file_name = Column(String(255))
     status = Column(String(50), default="Новый")
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    
+    owner = relationship("User", back_populates="projects")
+    files = relationship("ProjectFile", back_populates="project", cascade="all, delete-orphan")
+
+class ProjectFile(Base):
+    __tablename__ = "project_files"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String(255), nullable=False)
+    original_name = Column(String(255), nullable=False)
+    file_path = Column(String(500), nullable=False)
+    file_size = Column(Integer)
+    mime_type = Column(String(100))
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"))
+    uploaded_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    
+    project = relationship("Project", back_populates="files")
