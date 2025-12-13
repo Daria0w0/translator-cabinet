@@ -1,2 +1,18 @@
-__pycache__
 venv
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+uploads/
+temp_uploads/
+temp_downloads/
+.cache/
+*.log
+*.sqlite3
+*.db
+*.egg-info/
+# HuggingFace cache
+~/.cache/huggingface/
+# Model weights
+app/translation_model/

@@ -16,6 +16,8 @@ interface FileContent {
   file_path?: string;
 }
 
+const API_URL = 'http://localhost:8000';
+
 export default function TranslatorEditor() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
@@ -70,12 +72,11 @@ export default function TranslatorEditor() {
       setIsFileLoading(true);
       const content = await getFileContent(Number(projectId), file.id);
       setFileContent(content);
-      
+
       if (content.type === 'text') {
         setOriginalText(content.content);
-        generateDemoTranslation(content.content);
+        await generateTranslation(content.content);
       }
-      
     } catch (error) {
       console.error('Ошибка загрузки содержимого файла:', error);
     } finally {
@@ -83,11 +84,26 @@ export default function TranslatorEditor() {
     }
   };
 
-  const generateDemoTranslation = (text: string) => {
-    const demoTranslation = text.split('\n').map(line => 
-      `[ПЕРЕВОД] ${line}`
-    ).join('\n');
-    setTranslatedText(demoTranslation);
+  const generateTranslation = async (text: string) => {
+    try {
+      const response = await fetch(`${API_URL}/api/translation/translate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          source_lang: project?.sourceLang || 'rus_Cyrl',
+          target_lang: project?.targetLang || 'eng_Latn'
+        })
+      });
+      if (!response.ok) {
+        throw new Error('Ошибка перевода');
+      }
+      const data = await response.json();
+      setTranslatedText(data.translation);
+    } catch (error) {
+      setTranslatedText('Ошибка перевода');
+      console.error(error);
+    }
   };
 
   const handleFileSelect = async (file: ProjectFile) => {
