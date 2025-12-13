@@ -18,9 +18,10 @@ class MinioClient:
         try:
             if not self.client.bucket_exists(self.bucket_name):
                 self.client.make_bucket(self.bucket_name)
-                print(f"Bucket {self.bucket_name} создан")
+                print(f"Bucket {self.bucket_name} created")
         except S3Error as e:
-            print(f"Ошибка создания bucket: {e}")
+            print(f"Error creating bucket: {e}")
+            raise
 
     def upload_file(self, file_path: str, object_name: str) -> Optional[str]:
         try:
@@ -31,7 +32,7 @@ class MinioClient:
             )
             return f"{self.bucket_name}/{object_name}"
         except S3Error as e:
-            print(f"Ошибка загрузки файла: {e}")
+            print(f"Error uploading file to MinIO: {e}")
             return None
 
     def get_file_url(self, object_name: str) -> str:
@@ -42,7 +43,7 @@ class MinioClient:
             self.client.fget_object(self.bucket_name, object_name, file_path)
             return True
         except S3Error as e:
-            print(f"Ошибка скачивания файла: {e}")
+            print(f"Error downloading file from MinIO: {e}")
             return False
 
 minio_client = MinioClient()
