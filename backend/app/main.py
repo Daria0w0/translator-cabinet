@@ -1,0 +1,41 @@
+import os
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+import app.database as database
+import app.models as models
+
+from app.api.auth import router as auth_router
+from app.api.projects import router as projects_router
+from app.api.files import router as files_router
+
+models.Base.metadata.create_all(bind=database.engine)
+
+app = FastAPI()
+
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs("temp_uploads", exist_ok=True)
+os.makedirs("temp_downloads", exist_ok=True)
+
+# CORS Middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+# ==================== Подключаем роутеры ====================
+app.include_router(auth_router, prefix="/api/auth", tags=["Аутентификация"])
+app.include_router(projects_router, prefix="/api/projects", tags=["Проекты"])
+app.include_router(files_router, prefix="/api/projects", tags=["Файлы"])
+
+# ==================== Основные эндпоинты ====================
+@app.get("/")
+def read_root():
+    return {"message": "API работает с PostgreSQL!"}
