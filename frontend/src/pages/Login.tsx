@@ -179,7 +179,7 @@ const Login: React.FC = () => {
                 <input
                   type="text"
                   name="full_name"
-                  placeholder="Полное имя (опционально)"
+                  placeholder="Полное имя (не обязательно)"
                   value={formData.full_name}
                   onChange={handleChange}
                   className="form-input"

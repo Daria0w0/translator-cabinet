@@ -1,6 +1,6 @@
 import React, { useState, ChangeEvent, FormEvent, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getProjects, createProject, deleteProject, Project } from '../services/api';
+import { getProjects, createProject, deleteProject, Project, uploadProjectFile } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function Projects() {
@@ -14,10 +14,12 @@ export default function Projects() {
     description: '',
     sourceLang: 'Английский',
     targetLang: 'Русский',
+    file: null as File | null,
   });
 
   const [errors, setErrors] = useState({
     name: '',
+    file: '',
     general: ''
   });
 
@@ -38,7 +40,7 @@ export default function Projects() {
   };
 
   const validateForm = () => {
-    const newErrors = { name: '', general: '' };
+    const newErrors = { name: '', file: '', general: '' };
     
     if (!newProject.name.trim()) {
       newErrors.name = 'Название проекта обязательно';
@@ -46,46 +48,74 @@ export default function Projects() {
       newErrors.name = 'Название должно быть не менее 2 символов';
     }
 
+    if (!newProject.file) {
+      newErrors.file = 'Файл обязателен для загрузки';
+    }
+
     setErrors(newErrors);
-    return !newErrors.name && !newErrors.general;
+    return !newErrors.name && !newErrors.file && !newErrors.general;
   };
 
   const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setNewProject(prev => ({ ...prev, [name]: value }));
-    // Очищаем ошибку при изменении поля
     if (errors[name as keyof typeof errors]) {
       setErrors(prev => ({...prev, [name]: ''}));
     }
   };
 
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    setNewProject(prev => ({ ...prev, file }));
+    if (errors.file) {
+      setErrors(prev => ({...prev, file: ''}));
+    }
+  };
+
   const handleAddProject = async (e: FormEvent) => {
-    e.preventDefault();
+  e.preventDefault();
 
-    if (!validateForm()) return;
+  if (!validateForm()) return;
 
-    try {
-      const projectToCreate = {
-        name: newProject.name.trim(),
-        description: newProject.description.trim(),
-        sourceLang: newProject.sourceLang,
-        targetLang: newProject.targetLang,
-        status: 'Новый',
-      };
+  try {
+    console.log('Начало создания проекта...');
+    
+    const projectToCreate = {
+      name: newProject.name.trim(),
+      description: newProject.description.trim(),
+      sourceLang: newProject.sourceLang,
+      targetLang: newProject.targetLang,
+      status: 'Новый',
+    };
 
-      const createdProject = await createProject(projectToCreate);
-      setProjects(prev => [...prev, createdProject]);
+    console.log('Создаем проект в базе...');
+    const createdProject = await createProject(projectToCreate);
+    console.log('Проект создан, ID:', createdProject.id);
+    
+    if (newProject.file) {
+      console.log('Загружаем файл...', newProject.file.name);
+      await uploadProjectFile(createdProject.id, newProject.file);
+      console.log('Файл загружен');
+    }
 
-      setNewProject({
-        name: '',
-        description: '',
-        sourceLang: 'Английский',
-        targetLang: 'Русский',
-      });
-      setAdding(false);
-      setErrors({ name: '', general: '' });
-    } catch (error) {
-      setErrors(prev => ({...prev, general: 'Не удалось создать проект'}));
+    console.log('Перезагружаем список проектов...');
+    await loadProjects();
+    console.log('Список проектов обновлен');
+
+    setNewProject({
+      name: '',
+      description: '',
+      sourceLang: 'Английский',
+      targetLang: 'Русский',
+      file: null,
+    });
+    setAdding(false);
+    setErrors({ name: '', file: '', general: '' });
+    
+    console.log('Проект успешно создан!');
+  } catch (error) {
+    console.error('Ошибка создания проекта:', error);
+    setErrors(prev => ({...prev, general: 'Не удалось создать проект'}));
     }
   };
 
@@ -96,8 +126,9 @@ export default function Projects() {
       description: '',
       sourceLang: 'Английский',
       targetLang: 'Русский',
+      file: null,
     });
-    setErrors({ name: '', general: '' });
+    setErrors({ name: '', file: '', general: '' });
   };
 
   const handleDeleteProject = async (id: number) => {
@@ -108,6 +139,7 @@ export default function Projects() {
       await deleteProject(id);
       setProjects(prev => prev.filter(project => project.id !== id));
     } catch (error) {
+      console.error('Ошибка удаления проекта:', error);
       setErrors(prev => ({...prev, general: 'Не удалось удалить проект'}));
     }
   };
@@ -133,15 +165,15 @@ export default function Projects() {
     <div className="page projects-page">
       <div className="page-header">
         <div className="header-content">
-          <h1>Мои проекты</h1>
-          <p>Управляйте вашими проектами перевода</p>
+          <h1>Мои проекты перевода</h1>
+          <p>Управляйте вашими проектами и файлами для перевода</p>
         </div>
         {!adding && (
           <button 
             className="btn-primary" 
             onClick={() => setAdding(true)}
           >
-            + Новый проект
+            + Создать проект
           </button>
         )}
       </div>
@@ -173,6 +205,12 @@ export default function Projects() {
             </div>
             <div className="stat-card">
               <div className="stat-number">
+                {projects.filter(p => p.status === 'В работе').length}
+              </div>
+              <div className="stat-label">В работе</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-number">
                 {projects.filter(p => p.status === 'Завершен').length}
               </div>
               <div className="stat-label">Завершено</div>
@@ -183,7 +221,9 @@ export default function Projects() {
             {projects.map(project => (
               <div key={project.id} className="project-card">
                 <div className="project-header">
-                  <h2>{project.name}</h2>
+                  <div className="project-title">
+                    <h2>{project.name}</h2>
+                  </div>
                   <span 
                     className="project-status"
                     style={{ backgroundColor: getStatusColor(project.status) }}
@@ -202,19 +242,29 @@ export default function Projects() {
                     <span className="arrow">→</span>
                     <span className="target-lang">{project.targetLang}</span>
                   </div>
+                  <div className="file-info">
+                    <span className="file-count">
+                      {project.fileCount || 0} файл{project.fileCount !== 1 ? 'а' : ''}
+                    </span>
+                    {project.fileCount > 0 && (
+                      <span className="file-ready">Файл загружен</span>
+                    )}
+                  </div>
                   <div className="project-id">ID: {project.id}</div>
                 </div>
 
                 <div className="project-actions">
                   <Link
-                    to={`/projects/edit/${project.id}`}
-                    className="btn-secondary"
+                    to={`/projects/${project.id}/translate`}
+                    className="btn-primary"
+                    title="Открыть редактор перевода"
                   >
-                    Открыть
+                    Редактировать
                   </Link>
                   <button
                     className="btn-danger"
                     onClick={() => handleDeleteProject(project.id)}
+                    title="Удалить проект"
                   >
                     Удалить
                   </button>
@@ -248,47 +298,76 @@ export default function Projects() {
                   </div>
 
                   <div className="form-group">
-                    <label htmlFor="description">Описание</label>
+                    <label htmlFor="description">Описание проекта</label>
                     <textarea
                       id="description"
                       name="description"
                       value={newProject.description}
                       onChange={handleChange}
                       rows={3}
-                      placeholder="Опишите ваш проект..."
+                      placeholder="Опишите ваш проект перевода..."
                     />
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="file">Файл для перевода *</label>
+                    <input
+                      id="file"
+                      type="file"
+                      onChange={handleFileChange}
+                      required
+                      accept=".docx,.xlsx,.txt,.pdf,.doc,.rtf"
+                      className={errors.file ? 'error' : ''}
+                    />
+                    {errors.file && <span className="field-error">{errors.file}</span>}
+                    {newProject.file && (
+                      <div className="file-info-selected">
+                        Выбран файл: <strong>{newProject.file.name}</strong>
+                        <br />
+                        <small>Размер: {(newProject.file.size / 1024 / 1024).toFixed(2)} MB</small>
+                      </div>
+                    )}
+                    <div className="file-hint">
+                      Поддерживаемые форматы: .docx, .doc, .pdf, .txt, .rtf, .xlsx
+                    </div>
                   </div>
 
                   <div className="form-row">
                     <div className="form-group">
-                      <label htmlFor="sourceLang">Исходный язык</label>
+                      <label htmlFor="sourceLang">Исходный язык *</label>
                       <select 
                         id="sourceLang"
                         name="sourceLang" 
                         value={newProject.sourceLang} 
                         onChange={handleChange}
+                        required
                       >
-                        <option>Английский</option>
-                        <option>Русский</option>
-                        <option>Французский</option>
-                        <option>Немецкий</option>
-                        <option>Испанский</option>
+                        <option value="Английский">Английский</option>
+                        <option value="Русский">Русский</option>
+                        <option value="Французский">Французский</option>
+                        <option value="Немецкий">Немецкий</option>
+                        <option value="Испанский">Испанский</option>
+                        <option value="Китайский">Китайский</option>
+                        <option value="Японский">Японский</option>
                       </select>
                     </div>
 
                     <div className="form-group">
-                      <label htmlFor="targetLang">Язык перевода</label>
+                      <label htmlFor="targetLang">Язык перевода *</label>
                       <select 
                         id="targetLang"
                         name="targetLang" 
                         value={newProject.targetLang} 
                         onChange={handleChange}
+                        required
                       >
-                        <option>Русский</option>
-                        <option>Английский</option>
-                        <option>Французский</option>
-                        <option>Немецкий</option>
-                        <option>Испанский</option>
+                        <option value="Английский">Английский</option>
+                        <option value="Русский">Русский</option>
+                        <option value="Французский">Французский</option>
+                        <option value="Немецкий">Немецкий</option>
+                        <option value="Испанский">Испанский</option>
+                        <option value="Китайский">Китайский</option>
+                        <option value="Японский">Японский</option>
                       </select>
                     </div>
                   </div>
@@ -308,14 +387,14 @@ export default function Projects() {
 
           {projects.length === 0 && !adding && (
             <div className="empty-state">
-              <div className="empty-icon">📁</div>
-              <h3>Проектов пока нет</h3>
-              <p>Создайте свой первый проект перевода</p>
+              <div className="empty-icon">📚</div>
+              <h3>Проектов перевода пока нет</h3>
+              <p>Создайте свой первый проект перевода, загрузив файл для работы</p>
               <button 
                 className="btn-primary" 
                 onClick={() => setAdding(true)}
               >
-                Создать проект
+                + Создать первый проект
               </button>
             </div>
           )}

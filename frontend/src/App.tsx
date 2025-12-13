@@ -9,7 +9,9 @@ import Projects from "./pages/Projects";
 import User from "./pages/User";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
-import Header from "./components/Header"
+import TranslatorEditor from "./pages/TranslatorEditor";
+import Header from "./components/Header";
+
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
@@ -48,6 +50,14 @@ function AppRoutes() {
                 <Projects />
               </ProtectedRoute>
             } 
+          />
+          <Route 
+            path="/projects/:projectId/translate" 
+            element={
+              <ProtectedRoute>
+                <TranslatorEditor />
+              </ProtectedRoute>
+            }  
           />
           <Route path="*" element={<NotFound />} />
         </Routes>

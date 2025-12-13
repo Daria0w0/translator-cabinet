@@ -41,17 +41,17 @@ export interface RegisterData {
 
 export const authService = {
   async login(email: string, password: string) {
-    const response = await api.post('/login', { email, password });
+    const response = await api.post('/api/auth/login', { email, password });
     return response.data;
   },
 
   async register(userData: RegisterData) {
-    const response = await api.post('/register', userData);
+    const response = await api.post('/api/auth/register', userData);
     return response.data;
   },
 
   async getProfile(): Promise<User> {
-    const response = await api.get('/me');
+    const response = await api.get('/api/auth/me');
     return response.data;
   },
 };
