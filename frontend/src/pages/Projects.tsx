@@ -73,39 +73,49 @@ export default function Projects() {
   };
 
   const handleAddProject = async (e: FormEvent) => {
-    e.preventDefault();
+  e.preventDefault();
 
-    if (!validateForm()) return;
+  if (!validateForm()) return;
 
-    try {
-      const projectToCreate = {
-        name: newProject.name.trim(),
-        description: newProject.description.trim(),
-        sourceLang: newProject.sourceLang,
-        targetLang: newProject.targetLang,
-        status: 'Новый',
-      };
+  try {
+    console.log('Начало создания проекта...');
+    
+    const projectToCreate = {
+      name: newProject.name.trim(),
+      description: newProject.description.trim(),
+      sourceLang: newProject.sourceLang,
+      targetLang: newProject.targetLang,
+      status: 'Новый',
+    };
 
-      const createdProject = await createProject(projectToCreate);
-      
-      if (newProject.file) {
-        await uploadProjectFile(createdProject.id, newProject.file);
-      }
+    console.log('Создаем проект в базе...');
+    const createdProject = await createProject(projectToCreate);
+    console.log('Проект создан, ID:', createdProject.id);
+    
+    if (newProject.file) {
+      console.log('Загружаем файл...', newProject.file.name);
+      await uploadProjectFile(createdProject.id, newProject.file);
+      console.log('Файл загружен');
+    }
 
-      await loadProjects();
+    console.log('Перезагружаем список проектов...');
+    await loadProjects();
+    console.log('Список проектов обновлен');
 
-      setNewProject({
-        name: '',
-        description: '',
-        sourceLang: 'Английский',
-        targetLang: 'Русский',
-        file: null,
-      });
-      setAdding(false);
-      setErrors({ name: '', file: '', general: '' });
-    } catch (error) {
-      console.error('Ошибка создания проекта:', error);
-      setErrors(prev => ({...prev, general: 'Не удалось создать проект'}));
+    setNewProject({
+      name: '',
+      description: '',
+      sourceLang: 'Английский',
+      targetLang: 'Русский',
+      file: null,
+    });
+    setAdding(false);
+    setErrors({ name: '', file: '', general: '' });
+    
+    console.log('Проект успешно создан!');
+  } catch (error) {
+    console.error('Ошибка создания проекта:', error);
+    setErrors(prev => ({...prev, general: 'Не удалось создать проект'}));
     }
   };
 
