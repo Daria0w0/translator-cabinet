@@ -5,7 +5,7 @@ from jose import JWTError, jwt
 from datetime import timedelta
 
 import app.database as database
-from app.core_auth import (  # Изменено с app.auth
+from app.core_auth import (
     get_password_hash, 
     verify_password, 
     create_access_token,
@@ -23,7 +23,6 @@ def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(database.get_db)
 ) -> models.User:
-    """Получить текущего пользователя из токена"""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Не удалось подтвердить учетные данные",
@@ -46,7 +45,6 @@ def get_current_user(
 
 @router.post("/register", response_model=Token)
 def register(user_data: UserCreate, db: Session = Depends(database.get_db)):
-    """Регистрация нового пользователя"""
     existing_user = db.query(models.User).filter(
         (models.User.email == user_data.email) | (models.User.username == user_data.username)
     ).first()
@@ -86,7 +84,6 @@ def register(user_data: UserCreate, db: Session = Depends(database.get_db)):
 
 @router.post("/login", response_model=Token)
 def login(login_data: LoginRequest, db: Session = Depends(database.get_db)):
-    """Вход в систему"""
     user = db.query(models.User).filter(models.User.email == login_data.email).first()
     
     if not user or not verify_password(login_data.password, user.hashed_password):
@@ -116,5 +113,4 @@ def login(login_data: LoginRequest, db: Session = Depends(database.get_db)):
 
 @router.get("/me", response_model=UserResponse)
 def get_current_user_profile(current_user: models.User = Depends(get_current_user)):
-    """Получить информацию о текущем пользователе"""
     return current_user

@@ -1,14 +1,16 @@
-import React, { useState, useEffect, useRef, JSX } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { getProject, getProjectFiles, getFileContent, ProjectFile } from '../services/api';
-
-interface TranslationMemory {
-  id: number;
-  original: string;
-  translated: string;
-  context: string;
-}
+import {
+  getProject,
+  getProjectFiles,
+  getFileContent,
+  getFileSegments,
+  segmentFile,
+  updateSegment,
+  ProjectFile,
+  Segment
+} from '../services/api';
+import './styles/TranslatorEditor.css';
 
 interface FileContent {
   content: string;
@@ -16,28 +18,34 @@ interface FileContent {
   file_path?: string;
 }
 
-const API_URL = 'http://localhost:8000';
+interface SegmentUpdateRequest {
+  translated_text: string;
+  status: string;
+  add_to_termbase?: boolean;
+}
 
 export default function TranslatorEditor() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
   
   const [project, setProject] = useState<any>(null);
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [currentFile, setCurrentFile] = useState<ProjectFile | null>(null);
-  const [fileContent, setFileContent] = useState<FileContent | null>(null);
-  const [originalText, setOriginalText] = useState('');
-  const [translatedText, setTranslatedText] = useState('');
-  const [selectedWord, setSelectedWord] = useState<{word: string; position: number} | null>(null);
-  const [correction, setCorrection] = useState('');
-  const [translationMemory, setTranslationMemory] = useState<TranslationMemory[]>([]);
+  const [segments, setSegments] = useState<Segment[]>([]);
+  const [selectedSegmentId, setSelectedSegmentId] = useState<number | null>(null);
+  const [editingSegmentId, setEditingSegmentId] = useState<number | null>(null);
+  const [editedText, setEditedText] = useState<string>('');
+  const [showSaveDialog, setShowSaveDialog] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isFileLoading, setIsFileLoading] = useState(false);
+  const [isSegmenting, setIsSegmenting] = useState(false);
+  const [progress, setProgress] = useState({
+    total: 0,
+    translated: 0,
+    edited: 0,
+    percentage: 0
+  });
   
-  const originalTextRef = useRef<HTMLDivElement>(null);
-  const translatedTextRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     if (projectId) {
       loadProjectData();
@@ -71,11 +79,11 @@ export default function TranslatorEditor() {
     try {
       setIsFileLoading(true);
       const content = await getFileContent(Number(projectId), file.id);
-      setFileContent(content);
 
       if (content.type === 'text') {
-        setOriginalText(content.content);
-        await generateTranslation(content.content);
+        await loadSegmentsForFile(file, content.content);
+      } else {
+        setSegments([]);
       }
     } catch (error) {
       console.error('Ошибка загрузки содержимого файла:', error);
@@ -84,95 +92,132 @@ export default function TranslatorEditor() {
     }
   };
 
-  const generateTranslation = async (text: string) => {
+  const loadSegmentsForFile = async (file: ProjectFile, text: string) => {
     try {
-      const response = await fetch(`${API_URL}/api/translation/translate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text,
-          source_lang: project?.sourceLang || 'rus_Cyrl',
-          target_lang: project?.targetLang || 'eng_Latn'
-        })
-      });
-      if (!response.ok) {
-        throw new Error('Ошибка перевода');
+      const existingSegments = await getFileSegments(Number(projectId), file.id);
+      
+      if (existingSegments.length > 0) {
+        setSegments(existingSegments);
+        computeProgress(existingSegments);
+        return;
       }
-      const data = await response.json();
-      setTranslatedText(data.translation);
+      
+      setIsSegmenting(true);
+      const newSegments = await segmentFile(Number(projectId), file.id, text);
+      setSegments(newSegments);
+      computeProgress(newSegments);
+      
     } catch (error) {
-      setTranslatedText('Ошибка перевода');
-      console.error(error);
+      console.error('Ошибка загрузки сегментов:', error);
+    } finally {
+      setIsSegmenting(false);
     }
   };
+
+  const computeProgress = useCallback((segmentsList: Segment[]) => {
+    const total = segmentsList.length;
+    const translated = segmentsList.filter(s => 
+      s.translated_text && s.translated_text.trim() !== ''
+    ).length;
+    const edited = segmentsList.filter(s => 
+      s.status === 'translated' || s.status === 'edited'
+    ).length;
+    const percentage = total > 0 ? Math.round((translated / total) * 100) : 0;
+    
+    setProgress({ total, translated, edited, percentage });
+  }, []);
 
   const handleFileSelect = async (file: ProjectFile) => {
     setCurrentFile(file);
+    setSegments([]);
+    setSelectedSegmentId(null);
+    setEditingSegmentId(null);
     await loadFileContent(file);
   };
 
-  const handleWordClick = (word: string, event: React.MouseEvent) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    setSelectedWord({
-      word,
-      position: rect.left
-    });
-    setCorrection('');
-  };
-
-  const handleSaveCorrection = () => {
-    if (!selectedWord || !correction.trim()) return;
-
-    const newMemory: TranslationMemory = {
-      id: Date.now(),
-      original: selectedWord.word,
-      translated: correction,
-      context: `Файл: ${currentFile?.original_name}`
-    };
-
-    setTranslationMemory(prev => [newMemory, ...prev]);
-    setSelectedWord(null);
-    setCorrection('');
-  };
-
-  const handleSaveTranslation = async () => {
-    try {
-      console.log('Перевод сохранен:', translatedText);
-      alert('Перевод сохранен!');
-    } catch (error) {
-      console.error('Ошибка сохранения перевода:', error);
+  const handleSegmentClick = (segment: Segment) => {
+    setSelectedSegmentId(segment.id);
+    
+    if (editingSegmentId && editingSegmentId !== segment.id) {
+      saveCurrentEdit();
     }
   };
 
-  const handleExportTranslation = () => {
-    const blob = new Blob([translatedText], { type: 'text/plain', endings: 'native' });
+  const startEditing = (segment: Segment) => {
+    setEditingSegmentId(segment.id);
+    setEditedText(segment.translated_text || '');
+    setSelectedSegmentId(segment.id);
+  };
+
+  const cancelEditing = () => {
+    setEditingSegmentId(null);
+    setEditedText('');
+    setShowSaveDialog(false);
+  };
+
+  const saveCurrentEdit = async () => {
+    if (!editingSegmentId) return;
+    
+    const segment = segments.find(s => s.id === editingSegmentId);
+    if (!segment) return;
+    
+    setShowSaveDialog(true);
+  };
+
+  const handleSave = async (addToTermbase: boolean = false) => {
+    if (!editingSegmentId) return;
+    
+    const segment = segments.find(s => s.id === editingSegmentId);
+    if (!segment) return;
+    
+    try {
+      const isChanged = editedText !== (segment.translated_text || '');
+      const status = isChanged ? 'edited' : 'translated';
+      
+      const updateRequest: SegmentUpdateRequest = {
+        translated_text: editedText,
+        status: status,
+        add_to_termbase: addToTermbase
+      };
+      
+      const updatedSegment = await updateSegment(segment.id, updateRequest);
+      
+      setSegments(prev => 
+        prev.map(s => 
+          s.id === segment.id ? updatedSegment : s
+        )
+      );
+      
+      computeProgress(segments.map(s => 
+        s.id === segment.id ? updatedSegment : s
+      ));
+      
+      setEditingSegmentId(null);
+      setEditedText('');
+      setShowSaveDialog(false);
+      
+    } catch (error) {
+      console.error('Ошибка сохранения сегмента:', error);
+    }
+  };
+
+  const exportTranslation = () => {
+    if (!segments.length || !currentFile) return;
+    
+    const sortedSegments = [...segments].sort((a, b) => a.segment_index - b.segment_index);
+    const translationText = sortedSegments
+      .map(segment => segment.translated_text || '')
+      .join('\n\n');
+    
+    const blob = new Blob([translationText], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `translated_${currentFile?.original_name || 'file'}.txt`;
+    a.download = `translated_${currentFile.original_name}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  };
-
-  const renderClickableText = (text: string, isOriginal: boolean = false) => {
-    return text.split(' ').map((word, index) => (
-      <span
-        key={index}
-        className={`word ${isOriginal ? 'original-word' : 'translated-word'} ${selectedWord?.word === word ? 'selected' : ''}`}
-        onClick={(e) => isOriginal && handleWordClick(word, e)}
-        title={isOriginal ? "Нажмите для исправления перевода" : ""}
-      >
-        {word}
-      </span>
-    )).reduce((acc: JSX.Element[], word, index) => {
-      if (index > 0) {
-        acc.push(<span key={`space-${index}`}> </span>);
-      }
-      acc.push(word);
-      return acc;
-    }, []);
   };
 
   if (isLoading) {
@@ -186,40 +231,43 @@ export default function TranslatorEditor() {
 
   return (
     <div className="translator-editor">
+      {/* Заголовок */}
       <div className="translator-header">
         <div className="header-left">
-          <button 
-            onClick={() => navigate('/user/projects')} 
-            className="btn-back"
-          >
-            Назад к проектам
+          <button onClick={() => navigate('/user/projects')} className="btn-back">
+            ← Назад к проектам
           </button>
           <div className="project-info">
             <h1>{project?.name || 'Проект'}</h1>
             <span className="project-meta">
-              {project?.sourceLang} → {project?.targetLang}
+              {project?.source_lang} → {project?.target_lang}
             </span>
+            {segments.length > 0 && (
+              <div className="progress-bar">
+                <div 
+                  className="progress-fill" 
+                  style={{ width: `${progress.percentage}%` }}
+                />
+                <span className="progress-text">
+                  {progress.translated} из {progress.total} предложений переведено • {progress.edited} отредактировано
+                </span>
+              </div>
+            )}
           </div>
         </div>
         
         <div className="header-actions">
           <button 
-            onClick={handleSaveTranslation}
-            disabled={!translatedText}
+            onClick={exportTranslation} 
+            disabled={segments.length === 0 || progress.translated === 0}
             className="btn-primary"
           >
-            Сохранить
-          </button>
-          <button 
-            onClick={handleExportTranslation}
-            disabled={!translatedText}
-            className="btn-secondary"
-          >
-            Экспорт
+            Экспорт перевода
           </button>
         </div>
       </div>
 
+      {/* Выбор файлов */}
       {files.length > 0 && (
         <div className="file-selection">
           <h3>Файлы проекта:</h3>
@@ -229,160 +277,183 @@ export default function TranslatorEditor() {
                 key={file.id}
                 className={`file-tab ${currentFile?.id === file.id ? 'active' : ''}`}
                 onClick={() => handleFileSelect(file)}
-                disabled={isFileLoading}
+                disabled={isFileLoading || isSegmenting}
               >
                 {file.original_name}
-                {isFileLoading && currentFile?.id === file.id && ' Загрузка...'}
+                {isFileLoading && currentFile?.id === file.id && ' (загрузка...)'}
               </button>
             ))}
           </div>
         </div>
       )}
 
+      {/* Статус операций */}
+      {isSegmenting && (
+        <div className="operation-status">
+          <span>Сегментация текста...</span>
+        </div>
+      )}
+
+      {/* Основной редактор */}
       <div className="translator-main">
+        {/* Панель оригинала */}
         <div className="original-panel">
           <div className="panel-header">
             <h3>Оригинал</h3>
-            <div className="text-stats">
-              {currentFile && (
-                <>
-                  <span>{currentFile.original_name}</span>
-                  <span>{(currentFile.file_size / 1024).toFixed(1)} КБ</span>
-                </>
-              )}
-            </div>
+            {segments.length > 0 && (
+              <span className="segment-count">{segments.length} предложений</span>
+            )}
           </div>
           
-          <div 
-            ref={originalTextRef}
-            className="text-content original-text"
-          >
+          <div className="segments-container">
             {isFileLoading ? (
-              <div className="loading-file">Загрузка файла...</div>
-            ) : fileContent ? (
-              fileContent.type === 'text' ? (
-                renderClickableText(originalText, true)
-              ) : (
-                <div className="unsupported-format">
-                  <h4>Формат файла не поддерживается для прямого редактирования</h4>
-                  <p>Файл: {currentFile?.original_name}</p>
-                  <p>Используйте экспорт/импорт для этого формата</p>
-                </div>
-              )
+              <div className="loading-message">Загрузка файла...</div>
+            ) : isSegmenting ? (
+              <div className="loading-message">Сегментация текста...</div>
+            ) : segments.length === 0 ? (
+              <div className="empty-message">Нет сегментов для отображения</div>
             ) : (
-              <div className="no-file">Выберите файл для работы</div>
+              segments.map((segment, index) => (
+                <div
+                  key={segment.id}
+                  className={`segment-item ${segment.id === selectedSegmentId ? 'selected' : ''}`}
+                  onClick={() => handleSegmentClick(segment)}
+                >
+                  <div className="segment-header">
+                    <span className="segment-index">#{index + 1}</span>
+                    <span className={`segment-status ${segment.status}`}>
+                      {segment.status === 'auto_translated' ? 'нейронка' : 
+                       segment.status === 'edited' ? 'правка' : 'новый'}
+                    </span>
+                  </div>
+                  <div className="segment-content original-text">
+                    {segment.original_text}
+                  </div>
+                </div>
+              ))
             )}
           </div>
         </div>
 
+        {/* Панель перевода */}
         <div className="translation-panel">
           <div className="panel-header">
             <h3>Перевод</h3>
-            <div className="text-stats">
-              {originalText.length > 0 && (
-                <span>{originalText.split(' ').length} слов</span>
-              )}
-            </div>
+            {segments.length > 0 && (
+              <span className="translated-count">
+                {progress.translated} / {progress.total}
+              </span>
+            )}
           </div>
           
-          <div 
-            ref={translatedTextRef}
-            className="text-content translated-text"
-          >
+          <div className="segments-container">
             {isFileLoading ? (
-              <div className="loading-file">Загрузка перевода...</div>
-            ) : translatedText ? (
-              <textarea
-                value={translatedText}
-                onChange={(e) => setTranslatedText(e.target.value)}
-                className="translation-textarea"
-                placeholder="Автоматический перевод появится здесь..."
-                rows={20}
-              />
+              <div className="loading-message">Загрузка файла...</div>
+            ) : segments.length === 0 ? (
+              <div className="empty-message">Загрузите файл для перевода</div>
             ) : (
-              <div className="no-translation">
-                <p>Перевод будет сгенерирован автоматически после загрузки файла</p>
-              </div>
+              segments.map((segment, index) => (
+                <div
+                  key={segment.id}
+                  className={`segment-item ${segment.id === selectedSegmentId ? 'selected' : ''} 
+                    ${segment.status === 'edited' ? 'edited' : ''}`}
+                  onClick={() => handleSegmentClick(segment)}
+                  onDoubleClick={() => startEditing(segment)}
+                >
+                  <div className="segment-header">
+                    <span className="segment-index">#{index + 1}</span>
+                    <div className="segment-actions">
+                      {editingSegmentId === segment.id ? (
+                        <>
+                          <button 
+                            className="btn-small btn-save"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              saveCurrentEdit();
+                            }}
+                          >
+                            ✓
+                          </button>
+                          <button 
+                            className="btn-small btn-cancel"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              cancelEditing();
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </>
+                      ) : (
+                        <button 
+                          className="btn-small btn-edit"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            startEditing(segment);
+                          }}
+                        >
+                          ✎
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="segment-content">
+                    {editingSegmentId === segment.id ? (
+                      <div className="edit-container">
+                        <textarea
+                          value={editedText}
+                          onChange={(e) => setEditedText(e.target.value)}
+                          className="edit-textarea"
+                          autoFocus
+                          rows={3}
+                          placeholder="Введите исправленный перевод..."
+                        />
+                      </div>
+                    ) : (
+                      <div className={`translation-text ${segment.status === 'edited' ? 'edited-text' : ''}`}>
+                        {segment.translated_text || <span className="empty-translation">Нет перевода</span>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
             )}
           </div>
         </div>
       </div>
 
-      {selectedWord && (
-        <div 
-          className="correction-popup"
-          style={{ left: selectedWord.position }}
-        >
-          <div className="popup-header">
-            <h4>Исправление перевода</h4>
-            <button 
-              onClick={() => setSelectedWord(null)}
-              className="btn-close"
-            >
-              ×
-            </button>
-          </div>
-          <div className="popup-content">
-            <div className="original-word-display">
-              <strong>Слово для исправления:</strong> 
-              <span className="word-highlight">"{selectedWord.word}"</span>
-            </div>
-            <div className="correction-input">
-              <label>Правильный перевод:</label>
-              <input
-                type="text"
-                value={correction}
-                onChange={(e) => setCorrection(e.target.value)}
-                placeholder="Введите правильный перевод..."
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSaveCorrection();
-                  if (e.key === 'Escape') setSelectedWord(null);
-                }}
-              />
-            </div>
-            <div className="popup-actions">
+      {/* Диалог сохранения */}
+      {showSaveDialog && (
+        <div className="save-dialog-overlay">
+          <div className="save-dialog">
+            <h3>Сохранить изменения?</h3>
+            <p>Вы изменили перевод. Хотите сохранить исправление?</p>
+            <div className="dialog-buttons">
               <button 
-                onClick={() => setSelectedWord(null)}
                 className="btn-secondary"
+                onClick={() => {
+                  setShowSaveDialog(false);
+                  cancelEditing();
+                }}
               >
                 Отмена
               </button>
               <button 
-                onClick={handleSaveCorrection}
-                disabled={!correction.trim()}
                 className="btn-primary"
+                onClick={() => handleSave(false)}
               >
-                Сохранить
+                Просто сохранить
+              </button>
+              <button 
+                className="btn-termbase"
+                onClick={() => handleSave(true)}
+              >
+                Сохранить и добавить в терминологическую базу
               </button>
             </div>
           </div>
         </div>
       )}
-
-      <div className="memory-panel">
-        <div className="memory-header">
-          <h3>Память переводов</h3>
-          <span className="memory-count">{translationMemory.length} записей</span>
-        </div>
-        <div className="memory-content">
-          {translationMemory.length === 0 ? (
-            <div className="empty-memory">
-              <p>Ваши исправления переводов будут сохранены здесь</p>
-              <small>Нажимайте на слова в оригинальном тексте, чтобы добавить исправления</small>
-            </div>
-          ) : (
-            translationMemory.slice(0, 10).map((item) => (
-              <div key={item.id} className="memory-item">
-                <div className="memory-original">"{item.original}"</div>
-                <div className="memory-arrow">→</div>
-                <div className="memory-translated">"{item.translated}"</div>
-                <div className="memory-context">{item.context}</div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
     </div>
   );
 }

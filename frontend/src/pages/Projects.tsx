@@ -3,6 +3,16 @@ import { Link } from 'react-router-dom';
 import { getProjects, createProject, deleteProject, Project, uploadProjectFile } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 
+const languageCodeMap: Record<string, string> = {
+  'Английский': 'eng_Latn',
+  'Русский': 'rus_Cyrl',
+  'Французский': 'fra_Latn',
+  'Немецкий': 'deu_Latn',
+  'Испанский': 'spa_Latn',
+  'Китайский': 'zho_Hans',
+  'Японский': 'jpn_Jpan',
+};
+
 export default function Projects() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -12,8 +22,8 @@ export default function Projects() {
   const [newProject, setNewProject] = useState({
     name: '',
     description: '',
-    sourceLang: 'Английский',
-    targetLang: 'Русский',
+    source_lang: 'Английский',
+    target_lang: 'Русский',
     file: null as File | null,
   });
 
@@ -73,49 +83,52 @@ export default function Projects() {
   };
 
   const handleAddProject = async (e: FormEvent) => {
-  e.preventDefault();
+    e.preventDefault();
 
-  if (!validateForm()) return;
+    if (!validateForm()) return;
 
-  try {
-    console.log('Начало создания проекта...');
-    
-    const projectToCreate = {
-      name: newProject.name.trim(),
-      description: newProject.description.trim(),
-      sourceLang: newProject.sourceLang,
-      targetLang: newProject.targetLang,
-      status: 'Новый',
-    };
+    try {
+      console.log('Начало создания проекта...');
 
-    console.log('Создаем проект в базе...');
-    const createdProject = await createProject(projectToCreate);
-    console.log('Проект создан, ID:', createdProject.id);
-    
-    if (newProject.file) {
-      console.log('Загружаем файл...', newProject.file.name);
-      await uploadProjectFile(createdProject.id, newProject.file);
-      console.log('Файл загружен');
-    }
+      const sourceLangCode = languageCodeMap[newProject.source_lang] || newProject.source_lang;  // Изменено
+      const targetLangCode = languageCodeMap[newProject.target_lang] || newProject.target_lang;  // Изменено
 
-    console.log('Перезагружаем список проектов...');
-    await loadProjects();
-    console.log('Список проектов обновлен');
+      const projectToCreate = {
+        name: newProject.name.trim(),
+        description: newProject.description.trim(),
+        source_lang: sourceLangCode,
+        target_lang: targetLangCode,
+        status: 'Новый',
+      };
 
-    setNewProject({
-      name: '',
-      description: '',
-      sourceLang: 'Английский',
-      targetLang: 'Русский',
-      file: null,
-    });
-    setAdding(false);
-    setErrors({ name: '', file: '', general: '' });
-    
-    console.log('Проект успешно создан!');
-  } catch (error) {
-    console.error('Ошибка создания проекта:', error);
-    setErrors(prev => ({...prev, general: 'Не удалось создать проект'}));
+      console.log('Создаем проект в базе...', projectToCreate);
+      const createdProject = await createProject(projectToCreate);
+      console.log('Проект создан, ID:', createdProject.id);
+      
+      if (newProject.file) {
+        console.log('Загружаем файл...', newProject.file.name);
+        await uploadProjectFile(createdProject.id, newProject.file);
+        console.log('Файл загружен');
+      }
+
+      console.log('Перезагружаем список проектов...');
+      await loadProjects();
+      console.log('Список проектов обновлен');
+
+      setNewProject({
+        name: '',
+        description: '',
+        source_lang: 'Английский',
+        target_lang: 'Русский', 
+        file: null,
+      });
+      setAdding(false);
+      setErrors({ name: '', file: '', general: '' });
+      
+      console.log('Проект успешно создан!');
+    } catch (error) {
+      console.error('Ошибка создания проекта:', error);
+      setErrors(prev => ({...prev, general: 'Не удалось создать проект'}));
     }
   };
 
@@ -124,8 +137,8 @@ export default function Projects() {
     setNewProject({
       name: '',
       description: '',
-      sourceLang: 'Английский',
-      targetLang: 'Русский',
+      source_lang: 'Английский',
+      target_lang: 'Русский', 
       file: null,
     });
     setErrors({ name: '', file: '', general: '' });
@@ -238,9 +251,9 @@ export default function Projects() {
                 
                 <div className="project-details">
                   <div className="language-pair">
-                    <span className="source-lang">{project.sourceLang}</span>
+                    <span className="source-lang">{Object.entries(languageCodeMap).find(([key, val]) => val === project.source_lang)?.[0] || project.source_lang}</span>  {/* Изменено */}
                     <span className="arrow">→</span>
-                    <span className="target-lang">{project.targetLang}</span>
+                    <span className="target-lang">{Object.entries(languageCodeMap).find(([key, val]) => val === project.target_lang)?.[0] || project.target_lang}</span>  {/* Изменено */}
                   </div>
                   <div className="file-info">
                     <span className="file-count">
@@ -334,11 +347,11 @@ export default function Projects() {
 
                   <div className="form-row">
                     <div className="form-group">
-                      <label htmlFor="sourceLang">Исходный язык *</label>
+                      <label htmlFor="source_lang">Исходный язык *</label>
                       <select 
-                        id="sourceLang"
-                        name="sourceLang" 
-                        value={newProject.sourceLang} 
+                        id="source_lang"
+                        name="source_lang"
+                        value={newProject.source_lang}
                         onChange={handleChange}
                         required
                       >
@@ -353,11 +366,11 @@ export default function Projects() {
                     </div>
 
                     <div className="form-group">
-                      <label htmlFor="targetLang">Язык перевода *</label>
+                      <label htmlFor="target_lang">Язык перевода *</label>
                       <select 
-                        id="targetLang"
-                        name="targetLang" 
-                        value={newProject.targetLang} 
+                        id="target_lang"
+                        name="target_lang"
+                        value={newProject.target_lang}
                         onChange={handleChange}
                         required
                       >

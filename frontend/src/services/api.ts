@@ -2,8 +2,8 @@ export interface Project {
   id: number;
   name: string;
   description: string;
-  sourceLang: string;
-  targetLang: string;
+  source_lang: string;
+  target_lang: string;
   fileName?: string;
   status: string;
   owner_id?: number;
@@ -26,6 +26,19 @@ export interface FileContent {
   file_path?: string;
 }
 
+export interface Segment {
+  id: number;
+  project_file_id: number;
+  segment_index: number;
+  original_text: string;
+  translated_text?: string | null;
+  status: string;
+  translator_id?: number;
+  editor_id?: number;
+  created_at: string;
+  updated_at: string;
+}
+
 const API_URL = 'http://localhost:8000';
 
 function getAuthHeaders(): HeadersInit {
@@ -43,6 +56,7 @@ function getAuthHeadersMultipart(): HeadersInit {
   };
 }
 
+// ==================== ПРОЕКТЫ ====================
 export async function getProjects(): Promise<Project[]> {
   const response = await fetch(`${API_URL}/api/projects/`, {
     headers: getAuthHeaders()
@@ -101,6 +115,7 @@ export async function deleteProject(id: number): Promise<void> {
   }
 }
 
+// ==================== ФАЙЛЫ ====================
 export async function uploadProjectFile(projectId: number, file: File): Promise<ProjectFile> {
   const formData = new FormData();
   formData.append('file', file);
@@ -160,4 +175,89 @@ export async function getFileContent(projectId: number, fileId: number): Promise
     throw new Error('Ошибка при загрузке содержимого файла');
   }
   return response.json();
+}
+
+// ==================== СЕГМЕНТЫ ====================
+export async function getFileSegments(projectId: number, fileId: number): Promise<Segment[]> {
+  const response = await fetch(`${API_URL}/api/projects/${projectId}/files/${fileId}/segments`, {
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) {
+    if (response.status === 404) return [];
+    throw new Error('Ошибка при загрузке сегментов');
+  }
+  return response.json();
+}
+
+export async function segmentFile(projectId: number, fileId: number, text: string, method: string = 'hybrid'): Promise<Segment[]> {
+  const response = await fetch(`${API_URL}/api/projects/${projectId}/files/${fileId}/segmentize`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ text, method })
+  });
+  if (!response.ok) {
+    throw new Error('Ошибка сегментации файла');
+  }
+  return response.json();
+}
+
+export async function updateSegment(segmentId: number, segment: any): Promise<Segment> {
+  const response = await fetch(`${API_URL}/api/segments/${segmentId}`, {
+    method: 'PUT',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(segment),
+  });
+  if (!response.ok) {
+    throw new Error('Ошибка при обновлении сегмента');
+  }
+  return response.json();
+}
+
+export async function createSegment(segment: Omit<Segment, 'id' | 'created_at' | 'updated_at'>): Promise<Segment> {
+  const response = await fetch(`${API_URL}/api/segments/`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(segment),
+  });
+
+  if (!response.ok) {
+    throw new Error('Ошибка при создании сегмента');
+  }
+  return response.json();
+}
+
+// ==================== ПЕРЕВОД ====================
+export async function translateText(text: string, source_lang: string, target_lang: string): Promise<string> {
+  const response = await fetch(`${API_URL}/api/translation/translate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text,
+      source_lang,
+      target_lang
+    })
+  });
+  
+  if (!response.ok) {
+    throw new Error('Ошибка при переводе');
+  }
+  const data = await response.json();
+  return data.translation;
+}
+
+export async function batchTranslateTexts(texts: string[], source_lang: string, target_lang: string): Promise<string[]> {
+  const response = await fetch(`${API_URL}/api/translation/batch`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({
+      texts,
+      source_lang,
+      target_lang
+    })
+  });
+  if (!response.ok) {
+    throw new Error('Ошибка пакетного перевода');
+  }
+  const data = await response.json();
+  return data.translations || [];
 }

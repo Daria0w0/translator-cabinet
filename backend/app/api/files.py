@@ -19,7 +19,6 @@ async def upload_project_file(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    """Загрузить файл в проект"""
     project = db.query(models.Project).filter(
         models.Project.id == project_id,
         models.Project.owner_id == current_user.id
@@ -67,7 +66,6 @@ async def upload_project_file(
         
     except Exception as e:
         db.rollback()
-        print(f"Error uploading file: {e}")
         raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}")
 
 @router.get("/{project_id}/files", response_model=List[ProjectFileResponse])
@@ -76,7 +74,6 @@ def get_project_files(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    """Получить все файлы проекта"""
     project = db.query(models.Project).filter(
         models.Project.id == project_id,
         models.Project.owner_id == current_user.id
@@ -94,7 +91,6 @@ async def get_file_content(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    """Получить содержимое файла"""
     project = db.query(models.Project).filter(
         models.Project.id == project_id,
         models.Project.owner_id == current_user.id
@@ -141,7 +137,6 @@ async def get_file_content(
             }
             
     except Exception as e:
-        print(f"Error reading file: {e}")
         raise HTTPException(status_code=500, detail=f"Error reading file: {str(e)}")
 
 @router.delete("/{project_id}/files/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -151,7 +146,6 @@ def delete_project_file(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    """Удалить файл из проекта"""
     project = db.query(models.Project).filter(
         models.Project.id == project_id,
         models.Project.owner_id == current_user.id
@@ -178,5 +172,4 @@ def delete_project_file(
         
     except Exception as e:
         db.rollback()
-        print(f"Ошибка при удалении файла: {e}")
         raise HTTPException(status_code=500, detail="Ошибка при удалении файла")

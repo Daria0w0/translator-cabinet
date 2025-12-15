@@ -11,8 +11,25 @@ class Translator:
         self.pipe = pipeline("translation", model=self.model, tokenizer=self.tokenizer, device=0 if self.device == "cuda" else -1)
 
     def translate(self, text, src_lang, tgt_lang):
-        # NLLB uses language codes like 'rus_Cyrl', 'eng_Latn', etc.
-        return self.pipe(text, src_lang=src_lang, tgt_lang=tgt_lang, max_length=512)[0]['translation_text']
+        res = self.pipe(text, src_lang=src_lang, tgt_lang=tgt_lang, max_length=2000)
+        if isinstance(res, list):
+            item = res[0]
+            if isinstance(item, dict) and 'translation_text' in item:
+                return item['translation_text']
+            return str(item)
+        elif isinstance(res, dict) and 'translation_text' in res:
+            return res['translation_text']
+        else:
+            return str(res)
 
-# Singleton instance
+    def translate_batch(self, texts, src_lang, tgt_lang):
+        res = self.pipe(texts, src_lang=src_lang, tgt_lang=tgt_lang, max_length=2000)
+        translations = []
+        for r in res:
+            if isinstance(r, dict) and 'translation_text' in r:
+                translations.append(r['translation_text'])
+            else:
+                translations.append(str(r))
+        return translations
+
 translator = Translator()
