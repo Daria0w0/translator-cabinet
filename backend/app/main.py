@@ -10,8 +10,8 @@ from app.api.auth import router as auth_router
 from app.api.projects import router as projects_router
 from app.api.files import router as files_router
 from app.api.translation import router as translation_router
-from app.api.segments import router as segments_router  # НОВЫЙ ИМПОРТ
-
+from app.api.segments import router as segments_router
+from app.api.admin import router as admin_router
 models.Base.metadata.create_all(bind=database.engine)
 
 app = FastAPI()
@@ -35,9 +35,8 @@ app.include_router(auth_router, prefix="/api/auth", tags=["Аутентифик�
 app.include_router(projects_router, prefix="/api/projects", tags=["Проекты"])
 app.include_router(files_router, prefix="/api/projects", tags=["Файлы"])
 app.include_router(translation_router, prefix="/api/translation", tags=["Перевод"])
-app.include_router(segments_router, prefix="/api/segments", tags=["Сегменты"])  # НОВЫЙ РОУТЕР
-
-@app.get("/")
+app.include_router(segments_router, prefix="/api/segments", tags=["Сегменты"])
+app.include_router(admin_router, prefix="/api/admin", tags=["Администрирование"])
 def read_root():
     return {"message": "API работает с PostgreSQL!"}
 

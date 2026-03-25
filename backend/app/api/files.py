@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 import app.database as database
-from app.api.auth import get_current_user 
+from app.api.dependencies import ProjectAccessChecker, check_user_not_blocked
 import app.models as models
 from app.schemas import ProjectFileResponse
 from app.minio_client import minio_client
@@ -17,15 +17,9 @@ async def upload_project_file(
     project_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(check_user_not_blocked)
 ):
-    project = db.query(models.Project).filter(
-        models.Project.id == project_id,
-        models.Project.owner_id == current_user.id
-    ).first()
-    
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = ProjectAccessChecker.check_ownership(project_id, current_user, db)
     
     try:
         file_extension = os.path.splitext(file.filename)[1]
@@ -62,7 +56,7 @@ async def upload_project_file(
         db.commit()
         db.refresh(db_file)
         
-        return ProjectFileResponse.model_validate(db_file)
+        return db_file
         
     except Exception as e:
         db.rollback()
@@ -72,40 +66,22 @@ async def upload_project_file(
 def get_project_files(
     project_id: int,
     db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(check_user_not_blocked)
 ):
-    project = db.query(models.Project).filter(
-        models.Project.id == project_id,
-        models.Project.owner_id == current_user.id
-    ).first()
+    project = ProjectAccessChecker.check_ownership(project_id, current_user, db)
     
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    
-    return [ProjectFileResponse.model_validate(f) for f in project.files]
+    return project.files
 
 @router.get("/{project_id}/files/{file_id}/content")
 async def get_file_content(
     project_id: int,
     file_id: int,
     db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(check_user_not_blocked)
 ):
-    project = db.query(models.Project).filter(
-        models.Project.id == project_id,
-        models.Project.owner_id == current_user.id
-    ).first()
+    ProjectAccessChecker.check_ownership(project_id, current_user, db)
     
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    
-    project_file = db.query(models.ProjectFile).filter(
-        models.ProjectFile.id == file_id,
-        models.ProjectFile.project_id == project_id
-    ).first()
-    
-    if not project_file:
-        raise HTTPException(status_code=404, detail="File not found")
+    project_file = ProjectAccessChecker.check_file_access(file_id, current_user, db)
     
     try:
         temp_dir = "temp_downloads"
@@ -144,23 +120,11 @@ def delete_project_file(
     project_id: int,
     file_id: int,
     db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(check_user_not_blocked)
 ):
-    project = db.query(models.Project).filter(
-        models.Project.id == project_id,
-        models.Project.owner_id == current_user.id
-    ).first()
+    ProjectAccessChecker.check_ownership(project_id, current_user, db)
     
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    
-    project_file = db.query(models.ProjectFile).filter(
-        models.ProjectFile.id == file_id,
-        models.ProjectFile.project_id == project_id
-    ).first()
-    
-    if not project_file:
-        raise HTTPException(status_code=404, detail="File not found")
+    project_file = ProjectAccessChecker.check_file_access(file_id, current_user, db)
     
     try:
         if os.path.exists(project_file.file_path):

@@ -10,18 +10,26 @@ import User from "./pages/User";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
 import TranslatorEditor from "./pages/TranslatorEditor";
+import AdminDashboard from "./pages/AdminDashboard";
+import AdminUserProjects from "./pages/AdminUserProjects";
 import Header from "./components/Header";
 
-
-const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+const ProtectedRoute: React.FC<{ children: React.ReactNode; requireAdmin?: boolean }> = ({ 
+  children, 
+  requireAdmin = false 
+}) => {
   const { user, loading } = useAuth();
   
   if (loading) {
-    return <div>Загрузка...</div>;
+    return <div className="loading">Загрузка...</div>;
   }
   
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (requireAdmin && user.role !== 'admin') {
+    return <Navigate to="/" replace />;
   }
   
   return <>{children}</>;
@@ -35,6 +43,7 @@ function AppRoutes() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
+          
           <Route 
             path="/user" 
             element={
@@ -59,6 +68,24 @@ function AppRoutes() {
               </ProtectedRoute>
             }  
           />
+          
+          <Route 
+            path="/admin" 
+            element={
+              <ProtectedRoute requireAdmin={true}>
+                <AdminDashboard />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/admin/users/:userId/projects" 
+            element={
+              <ProtectedRoute requireAdmin={true}>
+                <AdminUserProjects />
+              </ProtectedRoute>
+            } 
+          />
+          
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>

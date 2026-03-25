@@ -1,3 +1,5 @@
+import apiClient from './apiClient';
+
 export interface Project {
   id: number;
   name: string;
@@ -39,225 +41,140 @@ export interface Segment {
   updated_at: string;
 }
 
-const API_URL = 'http://localhost:8000';
-
-function getAuthHeaders(): HeadersInit {
-  const token = localStorage.getItem('access_token');
-  return {
-    'Content-Type': 'application/json',
-    ...(token && { 'Authorization': `Bearer ${token}` })
-  };
-}
-
-function getAuthHeadersMultipart(): HeadersInit {
-  const token = localStorage.getItem('access_token');
-  return {
-    ...(token && { 'Authorization': `Bearer ${token}` })
-  };
-}
-
 // ==================== ПРОЕКТЫ ====================
 export async function getProjects(): Promise<Project[]> {
-  const response = await fetch(`${API_URL}/api/projects/`, {
-    headers: getAuthHeaders()
-  });
-  
-  if (!response.ok) {
-    if (response.status === 401) {
-      throw new Error('Требуется авторизация');
-    }
-    throw new Error('Ошибка при загрузке проектов');
-  }
-  return response.json();
+  const response = await apiClient.get<Project[]>('/api/projects/');
+  return response.data;
 }
 
-export async function createProject(project: Omit<Project, 'id' | 'fileCount' | 'owner_id'>): Promise<Project> {
-  const response = await fetch(`${API_URL}/api/projects/`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(project),
-  });
-  
-  if (!response.ok) {
-    if (response.status === 401) {
-      throw new Error('Требуется авторизация');
-    }
-    throw new Error('Ошибка при создании проекта');
-  }
-  return response.json();
+export async function createProject(
+  project: Omit<Project, 'id' | 'fileCount' | 'owner_id'>
+): Promise<Project> {
+  const response = await apiClient.post<Project>('/api/projects/', project);
+  return response.data;
 }
 
 export async function getProject(id: number): Promise<Project> {
-  const response = await fetch(`${API_URL}/api/projects/${id}`, {
-    headers: getAuthHeaders()
-  });
-  
-  if (!response.ok) {
-    if (response.status === 401) {
-      throw new Error('Требуется авторизация');
-    }
-    throw new Error('Ошибка при загрузке проекта');
-  }
-  return response.json();
+  const response = await apiClient.get<Project>(`/api/projects/${id}`);
+  return response.data;
 }
 
 export async function deleteProject(id: number): Promise<void> {
-  const response = await fetch(`${API_URL}/api/projects/${id}`, {
-    method: "DELETE",
-    headers: getAuthHeaders()
-  });
-  
-  if (!response.ok) {
-    if (response.status === 401) {
-      throw new Error('Требуется авторизация');
-    }
-    throw new Error("Ошибка при удалении проекта");
-  }
+  await apiClient.delete(`/api/projects/${id}`);
 }
 
 // ==================== ФАЙЛЫ ====================
-export async function uploadProjectFile(projectId: number, file: File): Promise<ProjectFile> {
+export async function uploadProjectFile(
+  projectId: number,
+  file: File
+): Promise<ProjectFile> {
   const formData = new FormData();
   formData.append('file', file);
-  
-  const response = await fetch(`${API_URL}/api/projects/${projectId}/upload-file`, {
-    method: 'POST',
-    headers: getAuthHeadersMultipart(),
-    body: formData,
-  });
-  
-  if (!response.ok) {
-    if (response.status === 401) {
-      throw new Error('Требуется авторизация');
+
+  const response = await apiClient.post<ProjectFile>(
+    `/api/projects/${projectId}/upload-file`,
+    formData,
+    {
+      headers: { 'Content-Type': 'multipart/form-data' },
     }
-    throw new Error('Ошибка при загрузке файла');
-  }
-  return response.json();
+  );
+  return response.data;
 }
 
 export async function getProjectFiles(projectId: number): Promise<ProjectFile[]> {
-  const response = await fetch(`${API_URL}/api/projects/${projectId}/files`, {
-    headers: getAuthHeaders()
-  });
-  
-  if (!response.ok) {
-    if (response.status === 401) {
-      throw new Error('Требуется авторизация');
-    }
-    throw new Error('Ошибка при загрузке файлов проекта');
-  }
-  return response.json();
+  const response = await apiClient.get<ProjectFile[]>(
+    `/api/projects/${projectId}/files`
+  );
+  return response.data;
 }
 
-export async function deleteProjectFile(projectId: number, fileId: number): Promise<void> {
-  const response = await fetch(`${API_URL}/api/projects/${projectId}/files/${fileId}`, {
-    method: "DELETE",
-    headers: getAuthHeaders()
-  });
-  
-  if (!response.ok) {
-    if (response.status === 401) {
-      throw new Error('Требуется авторизация');
-    }
-    throw new Error("Ошибка при удалении файла");
-  }
+export async function deleteProjectFile(
+  projectId: number,
+  fileId: number
+): Promise<void> {
+  await apiClient.delete(`/api/projects/${projectId}/files/${fileId}`);
 }
 
-export async function getFileContent(projectId: number, fileId: number): Promise<FileContent> {
-  const response = await fetch(`${API_URL}/api/projects/${projectId}/files/${fileId}/content`, {
-    headers: getAuthHeaders()
-  });
-  
-  if (!response.ok) {
-    if (response.status === 401) {
-      throw new Error('Требуется авторизация');
-    }
-    throw new Error('Ошибка при загрузке содержимого файла');
-  }
-  return response.json();
+export async function getFileContent(
+  projectId: number,
+  fileId: number
+): Promise<FileContent> {
+  const response = await apiClient.get<FileContent>(
+    `/api/projects/${projectId}/files/${fileId}/content`
+  );
+  return response.data;
 }
 
 // ==================== СЕГМЕНТЫ ====================
-export async function getFileSegments(projectId: number, fileId: number): Promise<Segment[]> {
-  const response = await fetch(`${API_URL}/api/projects/${projectId}/files/${fileId}/segments`, {
-    headers: getAuthHeaders()
-  });
-  if (!response.ok) {
-    if (response.status === 404) return [];
-    throw new Error('Ошибка при загрузке сегментов');
+export async function getFileSegments(
+  projectId: number,
+  fileId: number
+): Promise<Segment[]> {
+  try {
+    const response = await apiClient.get<Segment[]>(
+      `/api/projects/${projectId}/files/${fileId}/segments`
+    );
+    return response.data;
+  } catch (error: any) {
+    if (error.response?.status === 404) return [];
+    throw error;
   }
-  return response.json();
 }
 
-export async function segmentFile(projectId: number, fileId: number, text: string, method: string = 'hybrid'): Promise<Segment[]> {
-  const response = await fetch(`${API_URL}/api/projects/${projectId}/files/${fileId}/segmentize`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify({ text, method })
-  });
-  if (!response.ok) {
-    throw new Error('Ошибка сегментации файла');
-  }
-  return response.json();
+export async function segmentFile(
+  projectId: number,
+  fileId: number,
+  text: string,
+  method: string = 'hybrid'
+): Promise<Segment[]> {
+  const response = await apiClient.post<Segment[]>(
+    `/api/projects/${projectId}/files/${fileId}/segmentize`,
+    { text, method }
+  );
+  return response.data;
 }
 
-export async function updateSegment(segmentId: number, segment: any): Promise<Segment> {
-  const response = await fetch(`${API_URL}/api/segments/${segmentId}`, {
-    method: 'PUT',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(segment),
-  });
-  if (!response.ok) {
-    throw new Error('Ошибка при обновлении сегмента');
-  }
-  return response.json();
+export async function updateSegment(
+  segmentId: number,
+  segment: any
+): Promise<Segment> {
+  const response = await apiClient.put<Segment>(
+    `/api/segments/${segmentId}`,
+    segment
+  );
+  return response.data;
 }
 
-export async function createSegment(segment: Omit<Segment, 'id' | 'created_at' | 'updated_at'>): Promise<Segment> {
-  const response = await fetch(`${API_URL}/api/segments/`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(segment),
-  });
-
-  if (!response.ok) {
-    throw new Error('Ошибка при создании сегмента');
-  }
-  return response.json();
+export async function createSegment(
+  segment: Omit<Segment, 'id' | 'created_at' | 'updated_at'>
+): Promise<Segment> {
+  const response = await apiClient.post<Segment>('/api/segments/', segment);
+  return response.data;
 }
 
 // ==================== ПЕРЕВОД ====================
-export async function translateText(text: string, source_lang: string, target_lang: string): Promise<string> {
-  const response = await fetch(`${API_URL}/api/translation/translate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      text,
-      source_lang,
-      target_lang
-    })
+export async function translateText(
+  text: string,
+  source_lang: string,
+  target_lang: string
+): Promise<string> {
+  const response = await apiClient.post('/api/translation/translate', {
+    text,
+    source_lang,
+    target_lang,
   });
-  
-  if (!response.ok) {
-    throw new Error('Ошибка при переводе');
-  }
-  const data = await response.json();
-  return data.translation;
+  return response.data.translation;
 }
 
-export async function batchTranslateTexts(texts: string[], source_lang: string, target_lang: string): Promise<string[]> {
-  const response = await fetch(`${API_URL}/api/translation/batch`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify({
-      texts,
-      source_lang,
-      target_lang
-    })
+export async function batchTranslateTexts(
+  texts: string[],
+  source_lang: string,
+  target_lang: string
+): Promise<string[]> {
+  const response = await apiClient.post('/api/translation/batch', {
+    texts,
+    source_lang,
+    target_lang,
   });
-  if (!response.ok) {
-    throw new Error('Ошибка пакетного перевода');
-  }
-  const data = await response.json();
-  return data.translations || [];
+  return response.data.translations || [];
 }

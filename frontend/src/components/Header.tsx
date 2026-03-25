@@ -1,95 +1,84 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function Header() {
-  const location = useLocation();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  const isActive = (path: string) => location.pathname === path ? 'nav-link active' : 'nav-link';
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setMenuOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  const [showDropdown, setShowDropdown] = useState(false);
 
   const handleLogout = () => {
     logout();
     navigate('/');
-    setMenuOpen(false);
+  };
+
+  const getInitials = () => {
+    if (user?.full_name) {
+      return user.full_name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+    }
+    return user?.username?.substring(0, 2).toUpperCase() || 'U';
   };
 
   return (
     <header className="header">
       <div className="logo">
-        <Link to="/">translator-cabinet</Link>
+        <Link to="/">Translator Cabinet</Link>
       </div>
 
-      <nav className="nav">
-        <ul className="nav-list">
-          {user ? (
-            <>
-              <li>
-                <Link to="/user/projects" className={isActive('/user/projects')}>
-                  Мои проекты
-                </Link>
-              </li>
-              <li className="user-menu-container" ref={menuRef}>
-                <button 
-                  className="user-menu-btn"
-                  onClick={() => setMenuOpen(!menuOpen)}
-                >
-                  <span className="user-avatar">
-                    {user.username?.substring(0, 1).toUpperCase()}
-                  </span>
-                  {user.username}
-                  <span className="dropdown-arrow">▼</span>
-                </button>
-                
-                {menuOpen && (
-                  <div className="user-dropdown">
-                    <Link 
-                      to="/user" 
-                      className="dropdown-item"
-                      onClick={() => setMenuOpen(false)}
-                    >
-                      Мой профиль
-                    </Link>
-                    <Link 
-                      to="/user/projects" 
-                      className="dropdown-item"
-                      onClick={() => setMenuOpen(false)}
-                    >
-                      Мои проекты
-                    </Link>
-                    <div className="dropdown-divider"></div>
-                    <button 
-                      className="dropdown-item logout-item"
-                      onClick={handleLogout}
-                    >
-                      Выйти
-                    </button>
-                  </div>
-                )}
-              </li>
-            </>
-          ) : (
-            <li>
-              <Link to="/login" className={isActive('/login')}>
-                Войти
+      <nav className="nav-menu">
+        {user ? (
+          <>
+            <Link to="/user/projects" className="nav-link">
+              Проекты
+            </Link>
+            
+            {user.role === 'admin' && (
+              <Link to="/admin" className="nav-link admin-link">
+                Админ панель
               </Link>
-            </li>
-          )}
-        </ul>
+            )}
+            
+            <div className="user-menu">
+              <button 
+                className="user-menu-btn"
+                onClick={() => setShowDropdown(!showDropdown)}
+              >
+                <span className="user-avatar">{getInitials()}</span>
+                <span className="user-name">{user.username}</span>
+                <span className="dropdown-arrow">▼</span>
+              </button>
+              
+              {showDropdown && (
+                <div className="user-dropdown">
+                  <Link to="/user" className="dropdown-item" onClick={() => setShowDropdown(false)}>
+                    Профиль
+                  </Link>
+                  <Link to="/user/projects" className="dropdown-item" onClick={() => setShowDropdown(false)}>
+                    Мои проекты
+                  </Link>
+                  {user.role === 'admin' && (
+                    <Link to="/admin" className="dropdown-item" onClick={() => setShowDropdown(false)}>
+                      Админ панель
+                    </Link>
+                  )}
+                  <div className="dropdown-divider"></div>
+                  <button onClick={handleLogout} className="dropdown-item logout-item">
+                    Выйти
+                  </button>
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="auth-buttons">
+            <Link to="/login" className="nav-link">
+              Войти
+            </Link>
+            <Link to="/login" className="btn-register">
+              Регистрация
+            </Link>
+          </div>
+        )}
       </nav>
     </header>
   );

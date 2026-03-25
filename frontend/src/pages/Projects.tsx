@@ -1,24 +1,30 @@
 import React, { useState, ChangeEvent, FormEvent, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getProjects, createProject, deleteProject, Project, uploadProjectFile } from '../services/api';
+import {
+  getProjects,
+  createProject,
+  deleteProject,
+  Project,
+  uploadProjectFile,
+} from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 
 const languageCodeMap: Record<string, string> = {
-  'Английский': 'eng_Latn',
-  'Русский': 'rus_Cyrl',
-  'Французский': 'fra_Latn',
-  'Немецкий': 'deu_Latn',
-  'Испанский': 'spa_Latn',
-  'Китайский': 'zho_Hans',
-  'Японский': 'jpn_Jpan',
+  Английский: 'eng_Latn',
+  Русский: 'rus_Cyrl',
+  Французский: 'fra_Latn',
+  Немецкий: 'deu_Latn',
+  Испанский: 'spa_Latn',
+  Китайский: 'zho_Hans',
+  Японский: 'jpn_Jpan',
 };
 
 export default function Projects() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
-  const { user } = useAuth();
-  
+  const { user, isAdmin } = useAuth();
+
   const [newProject, setNewProject] = useState({
     name: '',
     description: '',
@@ -30,7 +36,7 @@ export default function Projects() {
   const [errors, setErrors] = useState({
     name: '',
     file: '',
-    general: ''
+    general: '',
   });
 
   useEffect(() => {
@@ -43,7 +49,7 @@ export default function Projects() {
       setProjects(projectsData);
     } catch (error) {
       console.error('Ошибка:', error);
-      setErrors(prev => ({...prev, general: 'Не удалось загрузить проекты'}));
+      setErrors((prev) => ({ ...prev, general: 'Не удалось загрузить проекты' }));
     } finally {
       setLoading(false);
     }
@@ -51,7 +57,7 @@ export default function Projects() {
 
   const validateForm = () => {
     const newErrors = { name: '', file: '', general: '' };
-    
+
     if (!newProject.name.trim()) {
       newErrors.name = 'Название проекта обязательно';
     } else if (newProject.name.trim().length < 2) {
@@ -66,32 +72,33 @@ export default function Projects() {
     return !newErrors.name && !newErrors.file && !newErrors.general;
   };
 
-  const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+  const handleChange = (
+    e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+  ) => {
     const { name, value } = e.target;
-    setNewProject(prev => ({ ...prev, [name]: value }));
+    setNewProject((prev) => ({ ...prev, [name]: value }));
     if (errors[name as keyof typeof errors]) {
-      setErrors(prev => ({...prev, [name]: ''}));
+      setErrors((prev) => ({ ...prev, [name]: '' }));
     }
   };
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null;
-    setNewProject(prev => ({ ...prev, file }));
+    setNewProject((prev) => ({ ...prev, file }));
     if (errors.file) {
-      setErrors(prev => ({...prev, file: ''}));
+      setErrors((prev) => ({ ...prev, file: '' }));
     }
   };
 
   const handleAddProject = async (e: FormEvent) => {
     e.preventDefault();
-
     if (!validateForm()) return;
 
     try {
-      console.log('Начало создания проекта...');
-
-      const sourceLangCode = languageCodeMap[newProject.source_lang] || newProject.source_lang;  // Изменено
-      const targetLangCode = languageCodeMap[newProject.target_lang] || newProject.target_lang;  // Изменено
+      const sourceLangCode =
+        languageCodeMap[newProject.source_lang] || newProject.source_lang;
+      const targetLangCode =
+        languageCodeMap[newProject.target_lang] || newProject.target_lang;
 
       const projectToCreate = {
         name: newProject.name.trim(),
@@ -101,34 +108,26 @@ export default function Projects() {
         status: 'Новый',
       };
 
-      console.log('Создаем проект в базе...', projectToCreate);
       const createdProject = await createProject(projectToCreate);
-      console.log('Проект создан, ID:', createdProject.id);
-      
+
       if (newProject.file) {
-        console.log('Загружаем файл...', newProject.file.name);
         await uploadProjectFile(createdProject.id, newProject.file);
-        console.log('Файл загружен');
       }
 
-      console.log('Перезагружаем список проектов...');
       await loadProjects();
-      console.log('Список проектов обновлен');
 
       setNewProject({
         name: '',
         description: '',
         source_lang: 'Английский',
-        target_lang: 'Русский', 
+        target_lang: 'Русский',
         file: null,
       });
       setAdding(false);
       setErrors({ name: '', file: '', general: '' });
-      
-      console.log('Проект успешно создан!');
     } catch (error) {
       console.error('Ошибка создания проекта:', error);
-      setErrors(prev => ({...prev, general: 'Не удалось создать проект'}));
+      setErrors((prev) => ({ ...prev, general: 'Не удалось создать проект' }));
     }
   };
 
@@ -138,31 +137,35 @@ export default function Projects() {
       name: '',
       description: '',
       source_lang: 'Английский',
-      target_lang: 'Русский', 
+      target_lang: 'Русский',
       file: null,
     });
     setErrors({ name: '', file: '', general: '' });
   };
 
   const handleDeleteProject = async (id: number) => {
-    if (!window.confirm("Вы уверены, что хотите удалить этот проект?")) {
+    if (!window.confirm('Вы уверены, что хотите удалить этот проект?')) {
       return;
     }
     try {
       await deleteProject(id);
-      setProjects(prev => prev.filter(project => project.id !== id));
+      setProjects((prev) => prev.filter((project) => project.id !== id));
     } catch (error) {
       console.error('Ошибка удаления проекта:', error);
-      setErrors(prev => ({...prev, general: 'Не удалось удалить проект'}));
+      setErrors((prev) => ({ ...prev, general: 'Не удалось удалить проект' }));
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
-      case 'новый': return '#7c3aed';
-      case 'в работе': return '#d97706';
-      case 'завершен': return '#059669';
-      default: return '#656d76';
+      case 'новый':
+        return '#7c3aed';
+      case 'в работе':
+        return '#d97706';
+      case 'завершен':
+        return '#059669';
+      default:
+        return '#656d76';
     }
   };
 
@@ -176,30 +179,34 @@ export default function Projects() {
 
   return (
     <div className="page projects-page">
-      <div className="page-header">
+      <div className="projects-header">
         <div className="header-content">
-          <h1>Мои проекты перевода</h1>
-          <p>Управляйте вашими проектами и файлами для перевода</p>
+          <h1>{isAdmin ? 'Все проекты перевода' : 'Мои проекты перевода'}</h1>
+          <p>
+            {isAdmin
+              ? 'Просмотр и управление всеми проектами в системе'
+              : 'Управляйте вашими проектами и файлами для перевода'}
+          </p>
         </div>
         {!adding && (
-          <button 
-            className="btn-primary" 
-            onClick={() => setAdding(true)}
-          >
+          <button className="btn btn-primary" onClick={() => setAdding(true)}>
             + Создать проект
           </button>
         )}
+        {isAdmin && (
+          <Link to="/admin" className="btn btn-secondary">
+            Панель администратора
+          </Link>
+        )}
       </div>
 
-      {errors.general && (
-        <div className="error-message">{errors.general}</div>
-      )}
+      {errors.general && <div className="error-message">{errors.general}</div>}
 
       {!user ? (
         <div className="auth-warning">
           <h3>Требуется авторизация</h3>
           <p>Для просмотра и управления проектами необходимо войти в систему</p>
-          <Link to="/login" className="btn-primary">
+          <Link to="/login" className="btn btn-primary">
             Войти в систему
           </Link>
         </div>
@@ -212,70 +219,82 @@ export default function Projects() {
             </div>
             <div className="stat-card">
               <div className="stat-number">
-                {projects.filter(p => p.status === 'Новый').length}
+                {projects.filter((p) => p.status === 'Новый').length}
               </div>
               <div className="stat-label">Новых</div>
             </div>
             <div className="stat-card">
               <div className="stat-number">
-                {projects.filter(p => p.status === 'В работе').length}
+                {projects.filter((p) => p.status === 'В работе').length}
               </div>
               <div className="stat-label">В работе</div>
             </div>
             <div className="stat-card">
               <div className="stat-number">
-                {projects.filter(p => p.status === 'Завершен').length}
+                {projects.filter((p) => p.status === 'Завершен').length}
               </div>
               <div className="stat-label">Завершено</div>
             </div>
           </div>
 
           <div className="projects-grid">
-            {projects.map(project => (
+            {projects.map((project) => (
               <div key={project.id} className="project-card">
-                <div className="project-header">
+                <div className="project-card-header">
                   <div className="project-title">
-                    <h2>{project.name}</h2>
+                    <h3>{project.name}</h3>
+                    {/* Для админа показываем владельца */}
+                    {isAdmin && project.owner_id && project.owner_id !== user.id && (
+                      <span className="project-owner-badge">
+                        Владелец ID: {project.owner_id}
+                      </span>
+                    )}
                   </div>
-                  <span 
+                  <span
                     className="project-status"
                     style={{ backgroundColor: getStatusColor(project.status) }}
                   >
                     {project.status}
                   </span>
                 </div>
-                
+
                 {project.description && (
                   <p className="project-description">{project.description}</p>
                 )}
-                
+
                 <div className="project-details">
                   <div className="language-pair">
-                    <span className="source-lang">{Object.entries(languageCodeMap).find(([key, val]) => val === project.source_lang)?.[0] || project.source_lang}</span>  {/* Изменено */}
-                    <span className="arrow">→</span>
-                    <span className="target-lang">{Object.entries(languageCodeMap).find(([key, val]) => val === project.target_lang)?.[0] || project.target_lang}</span>  {/* Изменено */}
-                  </div>
-                  <div className="file-info">
-                    <span className="file-count">
-                      {project.fileCount || 0} файл{project.fileCount !== 1 ? 'а' : ''}
+                    <span className="source-lang">
+                      {Object.entries(languageCodeMap).find(
+                        ([, val]) => val === project.source_lang
+                      )?.[0] || project.source_lang}
                     </span>
-                    {project.fileCount > 0 && (
-                      <span className="file-ready">Файл загружен</span>
-                    )}
+                    <span className="arrow">→</span>
+                    <span className="target-lang">
+                      {Object.entries(languageCodeMap).find(
+                        ([, val]) => val === project.target_lang
+                      )?.[0] || project.target_lang}
+                    </span>
                   </div>
-                  <div className="project-id">ID: {project.id}</div>
+                  <div className="project-meta">
+                    <span className="file-count">
+                      {project.fileCount || 0} файл
+                      {project.fileCount !== 1 ? 'а' : ''}
+                    </span>
+                    <span className="project-id">ID: {project.id}</span>
+                  </div>
                 </div>
 
                 <div className="project-actions">
                   <Link
                     to={`/projects/${project.id}/translate`}
-                    className="btn-primary"
+                    className="btn btn-primary"
                     title="Открыть редактор перевода"
                   >
                     Редактировать
                   </Link>
                   <button
-                    className="btn-danger"
+                    className="btn btn-danger"
                     onClick={() => handleDeleteProject(project.id)}
                     title="Удалить проект"
                   >
@@ -289,10 +308,12 @@ export default function Projects() {
           {adding && (
             <div className="modal-overlay">
               <div className="modal">
-                <form className="add-project-form" onSubmit={handleAddProject}>
+                <form className="modal-form" onSubmit={handleAddProject}>
                   <div className="modal-header">
                     <h2>Создать новый проект</h2>
-                    <button type="button" className="close-btn" onClick={handleCancel}>×</button>
+                    <button type="button" className="close-btn" onClick={handleCancel}>
+                      ×
+                    </button>
                   </div>
 
                   <div className="form-group">
@@ -307,7 +328,9 @@ export default function Projects() {
                       placeholder="Введите название проекта"
                       className={errors.name ? 'error' : ''}
                     />
-                    {errors.name && <span className="field-error">{errors.name}</span>}
+                    {errors.name && (
+                      <span className="field-error">{errors.name}</span>
+                    )}
                   </div>
 
                   <div className="form-group">
@@ -332,12 +355,17 @@ export default function Projects() {
                       accept=".docx,.xlsx,.txt,.pdf,.doc,.rtf"
                       className={errors.file ? 'error' : ''}
                     />
-                    {errors.file && <span className="field-error">{errors.file}</span>}
+                    {errors.file && (
+                      <span className="field-error">{errors.file}</span>
+                    )}
                     {newProject.file && (
-                      <div className="file-info-selected">
+                      <div className="selected-file">
                         Выбран файл: <strong>{newProject.file.name}</strong>
                         <br />
-                        <small>Размер: {(newProject.file.size / 1024 / 1024).toFixed(2)} MB</small>
+                        <small>
+                          Размер:{' '}
+                          {(newProject.file.size / 1024 / 1024).toFixed(2)} MB
+                        </small>
                       </div>
                     )}
                     <div className="file-hint">
@@ -348,48 +376,48 @@ export default function Projects() {
                   <div className="form-row">
                     <div className="form-group">
                       <label htmlFor="source_lang">Исходный язык *</label>
-                      <select 
+                      <select
                         id="source_lang"
                         name="source_lang"
                         value={newProject.source_lang}
                         onChange={handleChange}
                         required
                       >
-                        <option value="Английский">Английский</option>
-                        <option value="Русский">Русский</option>
-                        <option value="Французский">Французский</option>
-                        <option value="Немецкий">Немецкий</option>
-                        <option value="Испанский">Испанский</option>
-                        <option value="Китайский">Китайский</option>
-                        <option value="Японский">Японский</option>
+                        {Object.keys(languageCodeMap).map((lang) => (
+                          <option key={lang} value={lang}>
+                            {lang}
+                          </option>
+                        ))}
                       </select>
                     </div>
 
                     <div className="form-group">
                       <label htmlFor="target_lang">Язык перевода *</label>
-                      <select 
+                      <select
                         id="target_lang"
                         name="target_lang"
                         value={newProject.target_lang}
                         onChange={handleChange}
                         required
                       >
-                        <option value="Английский">Английский</option>
-                        <option value="Русский">Русский</option>
-                        <option value="Французский">Французский</option>
-                        <option value="Немецкий">Немецкий</option>
-                        <option value="Испанский">Испанский</option>
-                        <option value="Китайский">Китайский</option>
-                        <option value="Японский">Японский</option>
+                        {Object.keys(languageCodeMap).map((lang) => (
+                          <option key={lang} value={lang}>
+                            {lang}
+                          </option>
+                        ))}
                       </select>
                     </div>
                   </div>
 
                   <div className="form-actions">
-                    <button type="submit" className="btn-primary">
+                    <button type="submit" className="btn btn-primary">
                       Создать проект
                     </button>
-                    <button type="button" className="btn-secondary" onClick={handleCancel}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={handleCancel}
+                    >
                       Отменить
                     </button>
                   </div>
@@ -402,11 +430,10 @@ export default function Projects() {
             <div className="empty-state">
               <div className="empty-icon">📚</div>
               <h3>Проектов перевода пока нет</h3>
-              <p>Создайте свой первый проект перевода, загрузив файл для работы</p>
-              <button 
-                className="btn-primary" 
-                onClick={() => setAdding(true)}
-              >
+              <p>
+                Создайте свой первый проект перевода, загрузив файл для работы
+              </p>
+              <button className="btn btn-primary" onClick={() => setAdding(true)}>
                 + Создать первый проект
               </button>
             </div>

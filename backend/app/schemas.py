@@ -3,30 +3,87 @@ from typing import Optional, List
 from datetime import datetime
 from pydantic import ConfigDict
 
-# ==================== Пользователи ====================
-class UserBase(BaseModel):
+# ==================== Роли и пользователи ====================
+class UserCreate(BaseModel):
     email: EmailStr
     username: str
+    password: str
     full_name: Optional[str] = None
     is_translator: bool = False
     is_editor: bool = False
 
-class UserCreate(UserBase):
-    password: str
-
-class UserResponse(UserBase):
+class UserResponse(BaseModel):
     id: int
+    email: str
+    username: str
+    full_name: Optional[str] = None
+    is_translator: bool
+    is_editor: bool
+    role: str
     is_active: bool
-    model_config = ConfigDict(from_attributes=True)
+    is_blocked: bool
 
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-    user: UserResponse
+    class Config:
+        from_attributes = True
+
 
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+
+class Token(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str
+    user: UserResponse
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: str
+
+# ==================== Админ панель ====================
+class AdminUserListResponse(BaseModel):
+    id: int
+    email: str
+    username: str
+    full_name: Optional[str] = None
+    is_translator: bool
+    is_editor: bool
+    role: str
+    is_active: bool
+    is_blocked: bool
+    project_count: int = 0
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class AdminUserUpdateRequest(BaseModel):
+    role: Optional[str] = None
+    is_blocked: Optional[bool] = None
+    is_active: Optional[bool] = None
+
+
+class AdminProjectResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    source_lang: str
+    target_lang: str
+    status: str
+    owner_id: int
+    owner_name: str
+    fileCount: int = 0
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
 
 # ==================== Проекты ====================
 class ProjectCreate(BaseModel):

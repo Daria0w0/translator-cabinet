@@ -1,7 +1,12 @@
 from datetime import datetime, timezone
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, Enum as SQLAlchemyEnum
 from sqlalchemy.orm import relationship
 from app.database import Base
+import enum
+
+class UserRole(str, enum.Enum):
+    USER = "user"
+    ADMIN = "admin"
 
 class User(Base):
     __tablename__ = "users"
@@ -13,9 +18,16 @@ class User(Base):
     full_name = Column(String(200))
     is_translator = Column(Boolean, default=False)
     is_editor = Column(Boolean, default=False)
+    role = Column(SQLAlchemyEnum(UserRole), default=UserRole.USER, nullable=False)
     is_active = Column(Boolean, default=True)
+    is_blocked = Column(Boolean, default=False)
+    blocked_at = Column(DateTime, nullable=True)
+    blocked_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     projects = relationship("Project", back_populates="owner", cascade="all, delete-orphan")
+    
+    blocker = relationship("User", foreign_keys=[blocked_by], remote_side=[id])
 
 class Project(Base):
     __tablename__ = "projects"
@@ -78,3 +90,15 @@ class TermEntry(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     project = relationship("Project", backref="term_entries")
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token_hash = Column(String(255), unique=True, index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    is_revoked = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    replaced_by = Column(String(255), nullable=True) 
+    user = relationship("User", backref="refresh_tokens")

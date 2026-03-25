@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 import app.database as database
-from app.api.auth import get_current_user
+from app.api.dependencies import ProjectAccessChecker, check_user_not_blocked, RoleChecker
 import app.models as models
 from app.schemas import ProjectCreate, ProjectResponse, SegmentResponse, SegmentizeRequest
 from app.segmentation import SentenceSegmenter
@@ -14,49 +14,87 @@ router = APIRouter()
 @router.get("/", response_model=List[ProjectResponse])
 def get_projects(
     db: Session = Depends(database.get_db), 
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(check_user_not_blocked)
 ):
-    projects = db.query(models.Project).filter(models.Project.owner_id == current_user.id).all()
-    return [ProjectResponse.from_orm(project) for project in projects]
+    if current_user.role == "admin":
+        projects = db.query(models.Project).all()
+    else:
+        projects = db.query(models.Project).filter(
+            models.Project.owner_id == current_user.id
+        ).all()
+    
+    result = []
+    for project in projects:
+        project_dict = {
+            "id": project.id,
+            "name": project.name,
+            "description": project.description,
+            "source_lang": project.source_lang,
+            "target_lang": project.target_lang,
+            "status": project.status,
+            "owner_id": project.owner_id,
+            "fileCount": len(project.files)
+        }
+        result.append(project_dict)
+    
+    return result
 
 @router.get("/{project_id}", response_model=ProjectResponse)
 def get_project(
     project_id: int,
     db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(check_user_not_blocked)
 ):
-    project = db.query(models.Project).filter(
-        models.Project.id == project_id,
-        models.Project.owner_id == current_user.id
-    ).first()
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return ProjectResponse.from_orm(project)
+    project = ProjectAccessChecker.check_ownership(project_id, current_user, db)
+    
+    return {
+        "id": project.id,
+        "name": project.name,
+        "description": project.description,
+        "source_lang": project.source_lang,
+        "target_lang": project.target_lang,
+        "status": project.status,
+        "owner_id": project.owner_id,
+        "fileCount": len(project.files)
+    }
 
 @router.post("/", response_model=ProjectResponse)
 def create_project(
     project: ProjectCreate, 
     db: Session = Depends(database.get_db), 
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(check_user_not_blocked)
 ):
-    db_project = models.Project(**project.dict(), owner_id=current_user.id)
+    db_project = models.Project(
+        name=project.name,
+        description=project.description,
+        source_lang=project.source_lang,
+        target_lang=project.target_lang,
+        status=project.status,
+        owner_id=current_user.id
+    )
     db.add(db_project)
     db.commit()
     db.refresh(db_project)
-    return ProjectResponse.from_orm(db_project)
+    
+    return {
+        "id": db_project.id,
+        "name": db_project.name,
+        "description": db_project.description,
+        "source_lang": db_project.source_lang,
+        "target_lang": db_project.target_lang,
+        "status": db_project.status,
+        "owner_id": db_project.owner_id,
+        "fileCount": 0
+    }
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_project(
     project_id: int,
     db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(check_user_not_blocked)
 ):
-    project = db.query(models.Project).filter(
-        models.Project.id == project_id,
-        models.Project.owner_id == current_user.id
-    ).first()
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = ProjectAccessChecker.check_ownership(project_id, current_user, db)
+    
     db.delete(project)
     db.commit()
 
@@ -66,27 +104,17 @@ def get_file_segments(
     project_id: int,
     file_id: int,
     db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(check_user_not_blocked)
 ):
-    project = db.query(models.Project).filter(
-        models.Project.id == project_id,
-        models.Project.owner_id == current_user.id
-    ).first()
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-
-    file = db.query(models.ProjectFile).filter(
-        models.ProjectFile.id == file_id,
-        models.ProjectFile.project_id == project_id
-    ).first()
-    if file is None:
-        raise HTTPException(status_code=404, detail="File not found")
+    ProjectAccessChecker.check_ownership(project_id, current_user, db)
+    
+    file = ProjectAccessChecker.check_file_access(file_id, current_user, db)
 
     segments = db.query(models.DocumentSegment).filter(
         models.DocumentSegment.project_file_id == file_id
     ).order_by(models.DocumentSegment.segment_index).all()
     
-    return [SegmentResponse.from_orm(s) for s in segments]
+    return segments
 
 @router.post("/{project_id}/files/{file_id}/segmentize", response_model=List[SegmentResponse])
 def segment_file(
@@ -94,30 +122,25 @@ def segment_file(
     file_id: int,
     payload: SegmentizeRequest = Body(...),
     db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(check_user_not_blocked)
 ):
-    project = db.query(models.Project).filter(
-        models.Project.id == project_id,
-        models.Project.owner_id == current_user.id
-    ).first()
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = ProjectAccessChecker.check_ownership(project_id, current_user, db)
 
-    file = db.query(models.ProjectFile).filter(
-        models.ProjectFile.id == file_id,
-        models.ProjectFile.project_id == project_id
+    file = ProjectAccessChecker.check_file_access(file_id, current_user, db)
+
+    existing_segments = db.query(models.DocumentSegment).filter(
+        models.DocumentSegment.project_file_id == file_id
     ).first()
-    if file is None:
-        raise HTTPException(status_code=404, detail="File not found")
+    
+    if existing_segments:
+        all_segments = db.query(models.DocumentSegment).filter(
+            models.DocumentSegment.project_file_id == file_id
+        ).order_by(models.DocumentSegment.segment_index).all()
+        return all_segments
 
     text = payload.text
     if not text or not text.strip():
         raise HTTPException(status_code=400, detail="Text is empty")
-
-    db.query(models.DocumentSegment).filter(
-        models.DocumentSegment.project_file_id == file_id
-    ).delete(synchronize_session=False)
-    db.commit()
     
     segmenter = SentenceSegmenter()
     raw_segments = segmenter.segment(text, language=project.source_lang)
@@ -131,7 +154,8 @@ def segment_file(
                 src_lang=project.source_lang,
                 tgt_lang=project.target_lang
             )
-        except Exception:
+        except Exception as e:
+            print(f"Ошибка при автоматическом переводе сегментов: {e}")
             translations = [""] * len(original_texts)
     
     created_segments = []
@@ -155,4 +179,4 @@ def segment_file(
     for seg in created_segments:
         db.refresh(seg)
     
-    return [SegmentResponse.from_orm(s) for s in created_segments]
+    return created_segments

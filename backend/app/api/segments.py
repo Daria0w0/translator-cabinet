@@ -3,11 +3,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 import app.database as database
-from app.api.auth import get_current_user
+from app.api.dependencies import ProjectAccessChecker, check_user_not_blocked
 import app.models as models
-from app.schemas import SegmentBase, SegmentResponse, SegmentizeRequest, SegmentUpdateRequest
-from app.segmentation import SentenceSegmenter
-from app.translation import translator
+from app.schemas import SegmentBase, SegmentResponse, SegmentUpdateRequest
 
 router = APIRouter()
 
@@ -15,19 +13,28 @@ router = APIRouter()
 def create_segment(
     segment: SegmentBase, 
     db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(check_user_not_blocked)
 ):
-    db_segment = models.DocumentSegment(**segment.dict(), translator_id=current_user.id)
+    file = ProjectAccessChecker.check_file_access(segment.project_file_id, current_user, db)
+    
+    db_segment = models.DocumentSegment(
+        project_file_id=segment.project_file_id,
+        segment_index=segment.segment_index,
+        original_text=segment.original_text,
+        translated_text=segment.translated_text,
+        status=segment.status,
+        translator_id=current_user.id if current_user.is_translator else None
+    )
     db.add(db_segment)
     db.commit()
     db.refresh(db_segment)
-    return SegmentResponse.from_orm(db_segment)
+    return db_segment
 
 @router.get("/{segment_id}", response_model=SegmentResponse)
 def read_segment(
     segment_id: int, 
     db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(check_user_not_blocked)
 ):
     segment = db.query(models.DocumentSegment).filter(
         models.DocumentSegment.id == segment_id
@@ -36,26 +43,16 @@ def read_segment(
     if segment is None:
         raise HTTPException(status_code=404, detail="Segment not found")
     
-    file = db.query(models.ProjectFile).filter(
-        models.ProjectFile.id == segment.project_file_id
-    ).first()
+    ProjectAccessChecker.check_file_access(segment.project_file_id, current_user, db)
     
-    if file:
-        project = db.query(models.Project).filter(
-            models.Project.id == file.project_id,
-            models.Project.owner_id == current_user.id
-        ).first()
-        if not project:
-            raise HTTPException(status_code=403, detail="Access denied")
-    
-    return SegmentResponse.from_orm(segment)
+    return segment
 
 @router.put("/{segment_id}", response_model=SegmentResponse)
 def update_segment(
     segment_id: int, 
     update_request: SegmentUpdateRequest,
     db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(check_user_not_blocked)
 ):
     db_segment = db.query(models.DocumentSegment).filter(
         models.DocumentSegment.id == segment_id
@@ -64,17 +61,7 @@ def update_segment(
     if db_segment is None:
         raise HTTPException(status_code=404, detail="Segment not found")
     
-    file = db.query(models.ProjectFile).filter(
-        models.ProjectFile.id == db_segment.project_file_id
-    ).first()
-    
-    if file:
-        project = db.query(models.Project).filter(
-            models.Project.id == file.project_id,
-            models.Project.owner_id == current_user.id
-        ).first()
-        if not project:
-            raise HTTPException(status_code=403, detail="Access denied")
+    file = ProjectAccessChecker.check_file_access(db_segment.project_file_id, current_user, db)
     
     db_segment.translated_text = update_request.translated_text
     db_segment.status = update_request.status
@@ -107,13 +94,13 @@ def update_segment(
         except Exception:
             db.rollback()
     
-    return SegmentResponse.from_orm(db_segment)
+    return db_segment
 
 @router.delete("/{segment_id}")
 def delete_segment(
     segment_id: int, 
     db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(check_user_not_blocked)
 ):
     segment = db.query(models.DocumentSegment).filter(
         models.DocumentSegment.id == segment_id
@@ -122,17 +109,7 @@ def delete_segment(
     if segment is None:
         raise HTTPException(status_code=404, detail="Segment not found")
     
-    file = db.query(models.ProjectFile).filter(
-        models.ProjectFile.id == segment.project_file_id
-    ).first()
-    
-    if file:
-        project = db.query(models.Project).filter(
-            models.Project.id == file.project_id,
-            models.Project.owner_id == current_user.id
-        ).first()
-        if not project:
-            raise HTTPException(status_code=403, detail="Access denied")
+    ProjectAccessChecker.check_file_access(segment.project_file_id, current_user, db)
     
     db.delete(segment)
     db.commit()
