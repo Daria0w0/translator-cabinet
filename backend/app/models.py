@@ -3,6 +3,7 @@ from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, T
 from sqlalchemy.orm import relationship
 from app.database import Base
 import enum
+from sqlalchemy.orm import relationship, backref
 
 class UserRole(str, enum.Enum):
     USER = "user"
@@ -89,7 +90,10 @@ class TermEntry(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
-    project = relationship("Project", backref="term_entries")
+    project = relationship(
+        "Project",
+        backref=backref("term_entries", passive_deletes=True),
+    )
 
 class RefreshToken(Base):
     __tablename__ = "refresh_tokens"

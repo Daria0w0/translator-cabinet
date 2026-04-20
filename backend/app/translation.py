@@ -30,7 +30,7 @@ class Translator:
                 if self.model is None:
                     print(f"Loading model from {MODEL_PATH}")
                     try:
-                        self.tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
+                        self.tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH, use_fast=False)
                         self.model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_PATH)
                         
                         self.model = self.model.to(self.device)
