@@ -1,31 +1,80 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Body
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Body
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 
 import app.database as database
 from app.api.dependencies import ProjectAccessChecker, check_user_not_blocked, RoleChecker
 import app.models as models
-from app.schemas import ProjectCreate, ProjectResponse, SegmentResponse, SegmentizeRequest
+from app.schemas import PaginatedProjectResponse, ProjectCreate, ProjectResponse, SegmentResponse, SegmentizeRequest
 from app.segmentation import SentenceSegmenter
 from app.translation import translator
 
 router = APIRouter()
 
-@router.get("/", response_model=List[ProjectResponse])
+@router.get("/", response_model=PaginatedProjectResponse)
 def get_projects(
+    skip: int = Query(0, ge=0, description="Количество пропускаемых записей"),
+    limit: int = Query(20, ge=1, le=100, description="Максимальное количество записей"),
+    
+    search: Optional[str] = Query(None, description="Поиск по названию проекта"),
+    status: Optional[str] = Query(None, description="Фильтр по статусу"),
+    source_lang: Optional[str] = Query(None, description="Фильтр по исходному языку"),
+    target_lang: Optional[str] = Query(None, description="Фильтр по целевому языку"),
+    
+    sort_by: str = Query("created_at", description="Поле для сортировки (created_at, name, status)"),
+    sort_order: str = Query("desc", regex="^(asc|desc)$", description="Порядок сортировки"),
+    
     db: Session = Depends(database.get_db), 
     current_user: models.User = Depends(check_user_not_blocked)
 ):
     if current_user.role == "admin":
-        projects = db.query(models.Project).all()
+        query = db.query(models.Project)
     else:
-        projects = db.query(models.Project).filter(
+        query = db.query(models.Project).filter(
             models.Project.owner_id == current_user.id
-        ).all()
+        )
     
-    result = []
+    if search:
+        query = query.filter(
+            or_(
+                models.Project.name.ilike(f"%{search}%"),
+                models.Project.description.ilike(f"%{search}%")
+            )
+        )
+    
+    if status:
+        query = query.filter(models.Project.status == status)
+    
+    if source_lang:
+        query = query.filter(models.Project.source_lang == source_lang)
+    
+    if target_lang:
+        query = query.filter(models.Project.target_lang == target_lang)
+    
+    if sort_by == "created_at":
+        order_column = models.Project.created_at
+    elif sort_by == "name":
+        order_column = models.Project.name
+    elif sort_by == "status":
+        order_column = models.Project.status
+    else:
+        order_column = models.Project.created_at
+    
+    if sort_order == "desc":
+        order_column = order_column.desc()
+    else:
+        order_column = order_column.asc()
+    
+    query = query.order_by(order_column)
+    
+    total = query.count()
+    
+    projects = query.offset(skip).limit(limit).all()
+    
+    items = []
     for project in projects:
-        project_dict = {
+        items.append({
             "id": project.id,
             "name": project.name,
             "description": project.description,
@@ -34,10 +83,14 @@ def get_projects(
             "status": project.status,
             "owner_id": project.owner_id,
             "fileCount": len(project.files)
-        }
-        result.append(project_dict)
+        })
     
-    return result
+    return PaginatedProjectResponse(
+        items=items,
+        total=total,
+        skip=skip,
+        limit=limit
+    )
 
 @router.get("/{project_id}", response_model=ProjectResponse)
 def get_project(

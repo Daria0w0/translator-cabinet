@@ -46,6 +46,47 @@ class RefreshRequest(BaseModel):
 class LogoutRequest(BaseModel):
     refresh_token: str
 
+# ==================== Проекты ====================
+class ProjectCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    description: str = ""
+    source_lang: str = Field(..., min_length=1, max_length=50)
+    target_lang: str = Field(..., min_length=1, max_length=50)
+    status: str = Field(default="Новый", max_length=50)
+
+
+class ProjectResponse(BaseModel):
+    id: int
+    name: str
+    description: str
+    source_lang: str
+    target_lang: str
+    status: str
+    owner_id: int
+    fileCount: int = 0
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ==================== Пагинированные ответы ====================
+class PaginatedProjectResponse(BaseModel):
+    items: List[ProjectResponse]
+    total: int
+    skip: int
+    limit: int
+    
+    class Config:
+        from_attributes = True
+
+
+class PaginatedUserResponse(BaseModel):
+    items: List[UserResponse]
+    total: int
+    skip: int
+    limit: int
+    
+    class Config:
+        from_attributes = True
+
 # ==================== Админ панель ====================
 class AdminUserListResponse(BaseModel):
     id: int
@@ -85,24 +126,6 @@ class AdminProjectResponse(BaseModel):
     class Config:
         from_attributes = True
 
-# ==================== Проекты ====================
-class ProjectCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255)
-    description: str = ""
-    source_lang: str = Field(..., min_length=1, max_length=50)
-    target_lang: str = Field(..., min_length=1, max_length=50)
-    status: str = Field(default="Новый", max_length=50)
-
-class ProjectResponse(BaseModel):
-    id: int
-    name: str
-    description: str
-    source_lang: str
-    target_lang: str
-    status: str
-    owner_id: int
-    fileCount: int = 0
-    model_config = ConfigDict(from_attributes=True)
 
 # ==================== Файлы ====================
 class ProjectFileResponse(BaseModel):
