@@ -13,6 +13,7 @@ import './pages/styles/Home.css';
 import './pages/styles/AdminUserProjects.css';
 import './pages/styles/AdminDashboard.css';
 import './pages/styles/Blocked.css';
+import './pages/styles/seo.css';
 
 const root = ReactDOM.createRoot(
   document.getElementById('root') as HTMLElement

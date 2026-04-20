@@ -1,5 +1,23 @@
 import apiClient from './apiClient';
 
+export interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+  skip: number;
+  limit: number;
+}
+
+export interface ProjectFilters {
+  search?: string;
+  status?: string;
+  source_lang?: string;
+  target_lang?: string;
+  sort_by?: 'created_at' | 'name' | 'status';
+  sort_order?: 'asc' | 'desc';
+  skip?: number;
+  limit?: number;
+}
+
 export interface Project {
   id: number;
   name: string;
@@ -42,8 +60,33 @@ export interface Segment {
 }
 
 // ==================== ПРОЕКТЫ ====================
-export async function getProjects(): Promise<Project[]> {
-  const response = await apiClient.get<Project[]>('/api/projects/');
+export async function getProjects(filters?: ProjectFilters): Promise<Project[]> {
+  const params: any = {
+    skip: filters?.skip || 0,
+    limit: filters?.limit || 100,
+    sort_by: filters?.sort_by || 'created_at',
+    sort_order: filters?.sort_order || 'desc',
+  };
+  if (filters?.search) params.search = filters.search;
+  if (filters?.status) params.status = filters.status;
+  if (filters?.source_lang) params.source_lang = filters.source_lang;
+  if (filters?.target_lang) params.target_lang = filters.target_lang;
+  const response = await apiClient.get<PaginatedResponse<Project>>('/api/projects/', { params });
+  return response.data.items;
+}
+
+export async function getProjectsPaginated(filters?: ProjectFilters): Promise<PaginatedResponse<Project>> {
+  const params: any = {
+    skip: filters?.skip || 0,
+    limit: filters?.limit || 20,
+    sort_by: filters?.sort_by || 'created_at',
+    sort_order: filters?.sort_order || 'desc',
+  };
+  if (filters?.search) params.search = filters.search;
+  if (filters?.status) params.status = filters.status;
+  if (filters?.source_lang) params.source_lang = filters.source_lang;
+  if (filters?.target_lang) params.target_lang = filters.target_lang;
+  const response = await apiClient.get<PaginatedResponse<Project>>('/api/projects/', { params });
   return response.data;
 }
 
@@ -177,4 +220,27 @@ export async function batchTranslateTexts(
     target_lang,
   });
   return response.data.translations || [];
+}
+// ==================== ТЕРМИНОЛОГИЯ ====================
+export interface TermEntry {
+  id: number;
+  source_text: string;
+  target_text: string;
+  project_id: number | null;
+  occurrences: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getProjectTerms(
+  projectId: number,
+  search?: string,
+): Promise<TermEntry[]> {
+  const params: any = {};
+  if (search) params.search = search;
+  const response = await apiClient.get<TermEntry[]>(
+    `/api/projects/${projectId}/terms`,
+    { params },
+  );
+  return response.data;
 }

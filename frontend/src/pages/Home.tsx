@@ -1,72 +1,115 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useMeta } from '../hooks/useMeta';
+
+const BASE_URL = import.meta.env.VITE_SITE_URL || 'http://localhost:5173';
+
+const JSON_LD = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'Translator Cabinet',
+  description:
+    'Веб-платформа для профессиональной работы с переводами. ' +
+    'Управление проектами, сегментация текста, нейронный перевод и DeepL интеграция.',
+  applicationCategory: 'BusinessApplication',
+  operatingSystem: 'Web',
+  offers: {
+    '@type': 'Offer',
+    price: '0',
+    priceCurrency: 'RUB',
+  },
+  url: BASE_URL,
+  inLanguage: ['ru', 'en'],
+  featureList: [
+    'Управление проектами перевода',
+    'Автоматическая сегментация текста',
+    'Нейронный перевод (NLLB)',
+    'Интеграция с Yandex Translate',
+    'Память переводов',
+  ],
+};
 
 export default function Home() {
   const { user } = useAuth();
 
+  useMeta({
+    title: 'Главная',
+    description:
+      'Translator Cabinet — веб-платформа для профессиональной работы с переводами. ' +
+      'Управляйте проектами, работайте с памятью переводов и редактируйте тексты в одном месте.',
+    canonical: `${BASE_URL}/`,
+    ogTitle: 'Translator Cabinet — Кабинет Переводчика',
+    ogDescription:
+      'Управление проектами, сегментация текста, нейронный перевод и Yandex — всё в одном месте.',
+    ogType: 'website',
+    jsonLd: JSON_LD,
+  });
+
   return (
     <div className="home-page">
-      <div className="hero-section">
-        <h1 className="hero-title">
-          Добро пожаловать в <span className="gradient-text">Кабинет Переводчика</span>
+      <section className="hero-section" aria-labelledby="hero-title">
+        <h1 id="hero-title" className="hero-title">
+          Добро пожаловать в{' '}
+          <span className="gradient-text">Кабинет Переводчика</span>
         </h1>
         <p className="hero-description">
-          Веб-платформа для работы с переводами. Управляйте проектами, 
+          Веб-платформа для работы с переводами. Управляйте проектами,
           работайте с памятью переводов и редактируйте тексты в одном месте.
         </p>
         {!user && (
-          <div className="hero-actions">
+          <nav className="hero-actions" aria-label="Начало работы">
             <Link to="/login" className="btn btn-primary">
               Войти в систему
             </Link>
-            <Link to="/register" className="btn btn-secondary">
+            <Link to="/login" className="btn btn-secondary">
               Зарегистрироваться
             </Link>
-          </div>
+          </nav>
         )}
-      </div>
+      </section>
 
-      <div className="features-section">
-        <h2 className="section-title">Основные возможности</h2>
+      <section className="features-section" aria-labelledby="features-title">
+        <h2 id="features-title" className="section-title">
+          Основные возможности
+        </h2>
         <div className="features-row">
-          <div className="feature-box">
+          <article className="feature-box">
             <h3>Управление проектами</h3>
             <p>
-              Создавайте и организуйте проекты перевода. Управляйте файлами 
+              Создавайте и организуйте проекты перевода. Управляйте файлами
               и отслеживайте статусы выполнения.
             </p>
-          </div>
+          </article>
 
-          <div className="feature-box">
+          <article className="feature-box">
             <h3>Редактор перевода</h3>
             <p>
-              Удобный редактор для работы с переводами. Автоматический перевод 
-              и удобные инструменты для редактирования текстов.
+              Удобный редактор для работы с переводами. Автоматический нейронный
+              перевод и DeepL — инструменты для любого рабочего процесса.
             </p>
-          </div>
+          </article>
 
-          <div className="feature-box">
+          <article className="feature-box">
             <h3>Память переводов</h3>
             <p>
-              Используйте накопленные переводы для ускорения работы. 
+              Используйте накопленные переводы для ускорения работы.
               Система предлагает подходящие варианты из базы данных.
             </p>
-          </div>
+          </article>
         </div>
-      </div>
+      </section>
 
-      <div className="cta-section">
-        <h3 className="cta-title">
+      <section className="cta-section" aria-labelledby="cta-title">
+        <h2 id="cta-title" className="cta-title">
           {user ? 'Продолжить работу' : 'Начать работу'}
-        </h3>
+        </h2>
         <p className="cta-description">
-          {user 
+          {user
             ? 'Вы авторизованы в системе. Перейдите к проектам для продолжения работы.'
-            : 'Для доступа к возможностям платформы войдите в систему или зарегистрируйтесь.'
-          }
+            : 'Для доступа к возможностям платформы войдите в систему или зарегистрируйтесь.'}
         </p>
-        <div className="cta-buttons">
+        <nav className="cta-buttons" aria-label="Действия">
           {user ? (
             <>
               <Link to="/user/projects" className="btn btn-primary">
@@ -86,8 +129,8 @@ export default function Home() {
               </Link>
             </>
           )}
-        </div>
-      </div>
+        </nav>
+      </section>
     </div>
   );
 }

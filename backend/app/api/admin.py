@@ -1,27 +1,33 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from typing import List, Optional
 
 import app.database as database
 import app.models as models
 from app.api.dependencies import require_admin
-from app.schemas import AdminUserListResponse, AdminUserUpdateRequest, AdminProjectResponse
+from app.schemas import AdminUserListResponse, AdminUserUpdateRequest, AdminProjectResponse, PaginatedUserResponse
 
 router = APIRouter()
 
 
-@router.get("/users", response_model=List[AdminUserListResponse])
+@router.get("/users", response_model=PaginatedUserResponse)
 def get_all_users(
     skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
-    search: Optional[str] = None,
-    role: Optional[str] = None,
-    is_blocked: Optional[bool] = None,
+    limit: int = Query(20, ge=1, le=100),
+    
+    search: Optional[str] = Query(None, description="Поиск по имени, email или полному имени"),
+    role: Optional[str] = Query(None, description="Фильтр по роли (user/admin)"),
+    is_blocked: Optional[bool] = Query(None, description="Фильтр по блокировке"),
+    
+    sort_by: str = Query("created_at", description="Поле для сортировки"),
+    sort_order: str = Query("desc", regex="^(asc|desc)$"),
+    
     db: Session = Depends(database.get_db),
     current_admin: models.User = Depends(require_admin),
 ):
-    """Получение списка всех пользователей (только для админа)"""
+    """Получение списка всех пользователей с пагинацией и фильтрацией (только для админа)"""
+    
     query = db.query(
         models.User,
         func.count(models.Project.id).label("project_count"),
@@ -31,9 +37,11 @@ def get_all_users(
 
     if search:
         query = query.filter(
-            (models.User.username.ilike(f"%{search}%"))
-            | (models.User.email.ilike(f"%{search}%"))
-            | (models.User.full_name.ilike(f"%{search}%"))
+            or_(
+                models.User.username.ilike(f"%{search}%"),
+                models.User.email.ilike(f"%{search}%"),
+                models.User.full_name.ilike(f"%{search}%")
+            )
         )
 
     if role:
@@ -41,12 +49,30 @@ def get_all_users(
 
     if is_blocked is not None:
         query = query.filter(models.User.is_blocked == is_blocked)
-
+    
+    if sort_by == "created_at":
+        order_column = models.User.created_at
+    elif sort_by == "username":
+        order_column = models.User.username
+    elif sort_by == "email":
+        order_column = models.User.email
+    else:
+        order_column = models.User.created_at
+    
+    if sort_order == "desc":
+        order_column = order_column.desc()
+    else:
+        order_column = order_column.asc()
+    
+    query = query.order_by(order_column)
+    
+    total = query.count()
+    
     users_with_counts = query.offset(skip).limit(limit).all()
 
-    result = []
+    items = []
     for user, project_count in users_with_counts:
-        result.append({
+        items.append({
             "id": user.id,
             "email": user.email,
             "username": user.username,
@@ -60,7 +86,12 @@ def get_all_users(
             "created_at": user.created_at if hasattr(user, "created_at") else None,
         })
 
-    return result
+    return PaginatedUserResponse(
+        items=items,
+        total=total,
+        skip=skip,
+        limit=limit
+    )
 
 
 @router.put("/users/{user_id}", response_model=AdminUserListResponse)

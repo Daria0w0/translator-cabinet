@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { adminService, AdminProject } from '../services/adminService';
-import './styles/AdminUserProjects.css';
 
 export default function AdminUserProjects() {
   const { userId } = useParams<{ userId: string }>();

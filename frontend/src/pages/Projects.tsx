@@ -8,6 +8,7 @@ import {
   uploadProjectFile,
 } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { useMeta } from '../hooks/useMeta';
 
 const languageCodeMap: Record<string, string> = {
   Английский: 'eng_Latn',
@@ -24,6 +25,12 @@ export default function Projects() {
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const { user, isAdmin } = useAuth();
+
+  useMeta({
+    title: isAdmin ? 'Все проекты' : 'Мои проекты',
+    description: 'Управление проектами перевода.',
+    noIndex: true,
+  });
 
   const [newProject, setNewProject] = useState({
     name: '',
@@ -45,7 +52,8 @@ export default function Projects() {
 
   const loadProjects = async () => {
     try {
-      const projectsData = await getProjects();
+      const response = await getProjects();
+      const projectsData = Array.isArray(response) ? response : response.items;
       setProjects(projectsData);
     } catch (error) {
       console.error('Ошибка:', error);
@@ -158,14 +166,10 @@ export default function Projects() {
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
-      case 'новый':
-        return '#7c3aed';
-      case 'в работе':
-        return '#d97706';
-      case 'завершен':
-        return '#059669';
-      default:
-        return '#656d76';
+      case 'новый': return '#7c3aed';
+      case 'в работе': return '#d97706';
+      case 'завершен': return '#059669';
+      default: return '#656d76';
     }
   };
 
@@ -243,7 +247,6 @@ export default function Projects() {
                 <div className="project-card-header">
                   <div className="project-title">
                     <h3>{project.name}</h3>
-                    {/* Для админа показываем владельца */}
                     {isAdmin && project.owner_id && project.owner_id !== user.id && (
                       <span className="project-owner-badge">
                         Владелец ID: {project.owner_id}

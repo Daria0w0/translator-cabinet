@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   getProject,
@@ -8,15 +8,13 @@ import {
   segmentFile,
   updateSegment,
   ProjectFile,
-  Segment
+  Segment,
+  TermEntry,
+  getProjectTerms,
 } from '../services/api';
+import { deepLTranslate, getDeepLStatus } from '../services/deeplService';
+import { useMeta } from '../hooks/useMeta';
 import './styles/TranslatorEditor.css';
-
-interface FileContent {
-  content: string;
-  type: string;
-  file_path?: string;
-}
 
 interface SegmentUpdateRequest {
   translated_text: string;
@@ -24,10 +22,58 @@ interface SegmentUpdateRequest {
   add_to_termbase?: boolean;
 }
 
+interface DeepLBannerProps {
+  available: boolean | null;
+  provider: 'deepl' | 'nllb' | null;
+  translating: boolean;
+  onTranslate: () => void;
+  segmentText: string | null;
+}
+
+function DeepLBanner({ available, provider, translating, onTranslate, segmentText }: DeepLBannerProps) {
+  if (available === null) return null;
+
+  return (
+    <div className="deepl-banner" aria-live="polite">
+      {available ? (
+        <div className="deepl-available">
+          <span className="deepl-badge deepl">Yandex</span>
+          <span className="deepl-hint">
+            {segmentText
+              ? 'Переведите выбранный сегмент через Yandex'
+              : 'Выберите сегмент для перевода через Yandex'}
+          </span>
+          <button
+            className="btn-deepl"
+            onClick={onTranslate}
+            disabled={!segmentText || translating}
+            aria-busy={translating}
+          >
+            {translating ? 'Перевод...' : '⚡ Перевести через Yandex'}
+          </button>
+          {provider === 'nllb' && (
+            <span className="deepl-fallback-note">
+              ℹ️ Yandex недоступен — использован внутренний переводчик
+            </span>
+          )}
+          {provider === 'deepl' && (
+            <span className="deepl-success-note">✓ Переведено через Yandex</span>
+          )}
+        </div>
+      ) : (
+        <div className="deepl-unavailable">
+          <span className="deepl-badge nllb">NLLB</span>
+          <span className="deepl-hint">Yandex Translate не настроен — используется встроенный переводчик</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function TranslatorEditor() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  
+
   const [project, setProject] = useState<any>(null);
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [currentFile, setCurrentFile] = useState<ProjectFile | null>(null);
@@ -43,13 +89,27 @@ export default function TranslatorEditor() {
     total: 0,
     translated: 0,
     edited: 0,
-    percentage: 0
+    percentage: 0,
   });
-  
+
+  const [deeplAvailable, setDeeplAvailable] = useState<boolean | null>(null);
+  const [deeplTranslating, setDeeplTranslating] = useState(false);
+  const [lastProvider, setLastProvider] = useState<'deepl' | 'nllb' | null>(null);
+  const [termSuggestion, setTermSuggestion] = useState<TermEntry | null>(null);
+  const [terms, setTerms] = useState<TermEntry[]>([]);
+
+  useMeta({
+    title: project ? `Редактор — ${project.name}` : 'Редактор перевода',
+    description: 'Редактор сегментов перевода.',
+    noIndex: true,
+  });
+
   useEffect(() => {
-    if (projectId) {
-      loadProjectData();
-    }
+    getDeepLStatus().then((s) => setDeeplAvailable(s.available));
+  }, []);
+
+  useEffect(() => {
+    if (projectId) loadProjectData();
   }, [projectId]);
 
   const loadProjectData = async () => {
@@ -57,17 +117,20 @@ export default function TranslatorEditor() {
       setIsLoading(true);
       const [projectData, projectFiles] = await Promise.all([
         getProject(Number(projectId)),
-        getProjectFiles(Number(projectId))
+        getProjectFiles(Number(projectId)),
       ]);
-      
       setProject(projectData);
       setFiles(projectFiles);
-      
+      try {
+        const termsData = await getProjectTerms(Number(projectId));
+        setTerms(termsData);
+      } catch {
+
+      }
       if (projectFiles.length > 0) {
         setCurrentFile(projectFiles[0]);
         await loadFileContent(projectFiles[0]);
       }
-      
     } catch (error) {
       console.error('Ошибка загрузки проекта:', error);
     } finally {
@@ -78,52 +141,39 @@ export default function TranslatorEditor() {
   const loadFileContent = async (file: ProjectFile) => {
     try {
       setIsFileLoading(true);
-      const content = await getFileContent(Number(projectId), file.id);
-
-      if (content.type === 'text') {
-        await loadSegmentsForFile(file, content.content);
-      } else {
-        setSegments([]);
-      }
-    } catch (error) {
-      console.error('Ошибка загрузки содержимого файла:', error);
-    } finally {
-      setIsFileLoading(false);
-    }
-  };
-
-  const loadSegmentsForFile = async (file: ProjectFile, text: string) => {
-    try {
       const existingSegments = await getFileSegments(Number(projectId), file.id);
-      
       if (existingSegments.length > 0) {
         setSegments(existingSegments);
         computeProgress(existingSegments);
         return;
       }
-      
-      setIsSegmenting(true);
-      const newSegments = await segmentFile(Number(projectId), file.id, text);
-      setSegments(newSegments);
-      computeProgress(newSegments);
-      
+
+      const content = await getFileContent(Number(projectId), file.id);
+      if (content.type === 'text') {
+        setIsSegmenting(true);
+        const newSegments = await segmentFile(Number(projectId), file.id, content.content);
+        setSegments(newSegments);
+        computeProgress(newSegments);
+      } else {
+        setSegments([]);
+      }
     } catch (error) {
-      console.error('Ошибка загрузки сегментов:', error);
+      console.error('Ошибка загрузки файла:', error);
     } finally {
+      setIsFileLoading(false);
       setIsSegmenting(false);
     }
   };
 
   const computeProgress = useCallback((segmentsList: Segment[]) => {
     const total = segmentsList.length;
-    const translated = segmentsList.filter(s => 
-      s.translated_text && s.translated_text.trim() !== ''
+    const translated = segmentsList.filter(
+      (s) => s.translated_text && s.translated_text.trim() !== '',
     ).length;
-    const edited = segmentsList.filter(s => 
-      s.status === 'translated' || s.status === 'edited'
+    const edited = segmentsList.filter(
+      (s) => s.status === 'translated' || s.status === 'edited',
     ).length;
     const percentage = total > 0 ? Math.round((translated / total) * 100) : 0;
-    
     setProgress({ total, translated, edited, percentage });
   }, []);
 
@@ -132,12 +182,17 @@ export default function TranslatorEditor() {
     setSegments([]);
     setSelectedSegmentId(null);
     setEditingSegmentId(null);
+    setLastProvider(null);
     await loadFileContent(file);
   };
 
   const handleSegmentClick = (segment: Segment) => {
     setSelectedSegmentId(segment.id);
-    
+    setLastProvider(null);
+    const match = terms.find(
+      (t) => segment.original_text.toLowerCase().includes(t.source_text.toLowerCase())
+    );
+    setTermSuggestion(match ?? null);
     if (editingSegmentId && editingSegmentId !== segment.id) {
       saveCurrentEdit();
     }
@@ -157,58 +212,66 @@ export default function TranslatorEditor() {
 
   const saveCurrentEdit = async () => {
     if (!editingSegmentId) return;
-    
-    const segment = segments.find(s => s.id === editingSegmentId);
+    const segment = segments.find((s) => s.id === editingSegmentId);
     if (!segment) return;
-    
     setShowSaveDialog(true);
   };
 
   const handleSave = async (addToTermbase: boolean = false) => {
     if (!editingSegmentId) return;
-    
-    const segment = segments.find(s => s.id === editingSegmentId);
+    const segment = segments.find((s) => s.id === editingSegmentId);
     if (!segment) return;
-    
     try {
       const isChanged = editedText !== (segment.translated_text || '');
       const status = isChanged ? 'edited' : 'translated';
-      
       const updateRequest: SegmentUpdateRequest = {
         translated_text: editedText,
-        status: status,
-        add_to_termbase: addToTermbase
+        status,
+        add_to_termbase: addToTermbase,
       };
-      
       const updatedSegment = await updateSegment(segment.id, updateRequest);
-      
-      setSegments(prev => 
-        prev.map(s => 
-          s.id === segment.id ? updatedSegment : s
-        )
-      );
-      
-      computeProgress(segments.map(s => 
-        s.id === segment.id ? updatedSegment : s
-      ));
-      
+      const newSegments = segments.map((s) => (s.id === segment.id ? updatedSegment : s));
+      setSegments(newSegments);
+      computeProgress(newSegments);
       setEditingSegmentId(null);
       setEditedText('');
       setShowSaveDialog(false);
-      
     } catch (error) {
       console.error('Ошибка сохранения сегмента:', error);
     }
   };
 
+  // ── Yandex translation of selected segment ─────────────────────────────
+  const handleDeepLTranslate = async () => {
+    if (!selectedSegmentId || !project) return;
+    const segment = segments.find((s) => s.id === selectedSegmentId);
+    if (!segment) return;
+
+    setDeeplTranslating(true);
+    setLastProvider(null);
+
+    try {
+      const result = await deepLTranslate(
+        segment.original_text,
+        project.source_lang,
+        project.target_lang,
+      );
+
+      setLastProvider(result.provider === 'error' ? null : result.provider);
+
+      if (result.provider !== 'error') {
+        startEditing({ ...segment, translated_text: result.translation });
+        setEditedText(result.translation);
+      }
+    } finally {
+      setDeeplTranslating(false);
+    }
+  };
+
   const exportTranslation = () => {
     if (!segments.length || !currentFile) return;
-    
     const sortedSegments = [...segments].sort((a, b) => a.segment_index - b.segment_index);
-    const translationText = sortedSegments
-      .map(segment => segment.translated_text || '')
-      .join('\n\n');
-    
+    const translationText = sortedSegments.map((s) => s.translated_text || '').join('\n\n');
     const blob = new Blob([translationText], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -220,10 +283,12 @@ export default function TranslatorEditor() {
     URL.revokeObjectURL(url);
   };
 
+  const selectedSegment = segments.find((s) => s.id === selectedSegmentId) ?? null;
+
   if (isLoading) {
     return (
-      <div className="translator-loading">
-        <div className="loading-spinner"></div>
+      <div className="translator-loading" aria-busy="true">
+        <div className="loading-spinner" aria-hidden="true" />
         <p>Загрузка проекта...</p>
       </div>
     );
@@ -232,165 +297,211 @@ export default function TranslatorEditor() {
   return (
     <div className="translator-editor">
       {/* Заголовок */}
-      <div className="translator-header">
+      <header className="translator-header">
         <div className="header-left">
           <button onClick={() => navigate('/user/projects')} className="btn-back">
             ← Назад к проектам
           </button>
           <div className="project-info">
             <h1>{project?.name || 'Проект'}</h1>
-            <span className="project-meta">
+            <span className="project-meta" aria-label="Языковая пара">
               {project?.source_lang} → {project?.target_lang}
             </span>
             {segments.length > 0 && (
-              <div className="progress-bar">
-                <div 
-                  className="progress-fill" 
-                  style={{ width: `${progress.percentage}%` }}
-                />
+              <div className="progress-bar" role="progressbar" aria-valuenow={progress.percentage} aria-valuemin={0} aria-valuemax={100}>
+                <div className="progress-fill" style={{ width: `${progress.percentage}%` }} />
                 <span className="progress-text">
-                  {progress.translated} из {progress.total} предложений переведено • {progress.edited} отредактировано
+                  {progress.translated} из {progress.total} предложений переведено •{' '}
+                  {progress.edited} отредактировано
                 </span>
               </div>
             )}
           </div>
         </div>
-        
         <div className="header-actions">
-          <button 
-            onClick={exportTranslation} 
+          <button
+            onClick={exportTranslation}
             disabled={segments.length === 0 || progress.translated === 0}
             className="btn-primary"
           >
             Экспорт перевода
           </button>
         </div>
-      </div>
+      </header>
+
+      {/* DeepL панель */}
+      <DeepLBanner
+        available={deeplAvailable}
+        provider={lastProvider}
+        translating={deeplTranslating}
+        onTranslate={handleDeepLTranslate}
+        segmentText={selectedSegment?.original_text ?? null}
+      />
+
+      {/* Подсказка из памяти переводов */}
+      {termSuggestion && (
+        <div className="term-suggestion">
+          <span className="term-suggestion-label">💡 Память переводов:</span>
+          <span className="term-suggestion-source">"{termSuggestion.source_text}"</span>
+          <span className="term-suggestion-arrow">→</span>
+          <span className="term-suggestion-target">"{termSuggestion.target_text}"</span>
+          <span className="term-suggestion-count">{termSuggestion.occurrences}×</span>
+          <button
+            className="term-suggestion-use"
+            onClick={() => {
+              const seg = segments.find((s) => s.id === selectedSegmentId);
+              if (seg) {
+                startEditing(seg);
+                setEditedText(termSuggestion.target_text);
+              }
+            }}
+          >
+            Использовать
+          </button>
+        </div>
+      )}
 
       {/* Выбор файлов */}
       {files.length > 0 && (
-        <div className="file-selection">
-          <h3>Файлы проекта:</h3>
+        <nav className="file-selection" aria-label="Файлы проекта">
+          <h2 className="sr-only">Файлы проекта</h2>
           <div className="file-tabs">
-            {files.map(file => (
+            {files.map((file) => (
               <button
                 key={file.id}
                 className={`file-tab ${currentFile?.id === file.id ? 'active' : ''}`}
                 onClick={() => handleFileSelect(file)}
                 disabled={isFileLoading || isSegmenting}
+                aria-pressed={currentFile?.id === file.id}
               >
                 {file.original_name}
                 {isFileLoading && currentFile?.id === file.id && ' (загрузка...)'}
               </button>
             ))}
           </div>
-        </div>
+        </nav>
       )}
 
       {/* Статус операций */}
       {isSegmenting && (
-        <div className="operation-status">
+        <div className="operation-status" role="status" aria-live="polite">
           <span>Сегментация текста...</span>
         </div>
       )}
 
       {/* Основной редактор */}
       <div className="translator-main">
-        {/* Панель оригинала */}
-        <div className="original-panel">
+        {/* Оригинал */}
+        <section className="original-panel" aria-labelledby="original-panel-title">
           <div className="panel-header">
-            <h3>Оригинал</h3>
+            <h2 id="original-panel-title">Оригинал</h2>
             {segments.length > 0 && (
               <span className="segment-count">{segments.length} предложений</span>
             )}
           </div>
-          
+
           <div className="segments-container">
             {isFileLoading ? (
-              <div className="loading-message">Загрузка файла...</div>
+              <p className="loading-message" role="status">Загрузка файла...</p>
             ) : isSegmenting ? (
-              <div className="loading-message">Сегментация текста...</div>
+              <p className="loading-message" role="status">Сегментация текста...</p>
             ) : segments.length === 0 ? (
-              <div className="empty-message">Нет сегментов для отображения</div>
+              <p className="empty-message">Нет сегментов для отображения</p>
             ) : (
               segments.map((segment, index) => (
                 <div
                   key={segment.id}
                   className={`segment-item ${segment.id === selectedSegmentId ? 'selected' : ''}`}
                   onClick={() => handleSegmentClick(segment)}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={segment.id === selectedSegmentId}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSegmentClick(segment)}
                 >
                   <div className="segment-header">
                     <span className="segment-index">#{index + 1}</span>
                     <span className={`segment-status ${segment.status}`}>
-                      {segment.status === 'auto_translated' ? 'нейронка' : 
-                       segment.status === 'edited' ? 'правка' : 'новый'}
+                      {segment.status === 'auto_translated'
+                        ? 'нейронка'
+                        : segment.status === 'edited'
+                        ? 'правка'
+                        : 'новый'}
                     </span>
                   </div>
-                  <div className="segment-content original-text">
-                    {segment.original_text}
-                  </div>
+                  <div className="segment-content original-text">{segment.original_text}</div>
                 </div>
               ))
             )}
           </div>
-        </div>
+        </section>
 
-        {/* Панель перевода */}
-        <div className="translation-panel">
+        {/* Перевод */}
+        <section className="translation-panel" aria-labelledby="translation-panel-title">
           <div className="panel-header">
-            <h3>Перевод</h3>
+            <h2 id="translation-panel-title">Перевод</h2>
             {segments.length > 0 && (
               <span className="translated-count">
                 {progress.translated} / {progress.total}
               </span>
             )}
           </div>
-          
+
           <div className="segments-container">
             {isFileLoading ? (
-              <div className="loading-message">Загрузка файла...</div>
+              <p className="loading-message" role="status">Загрузка файла...</p>
             ) : segments.length === 0 ? (
-              <div className="empty-message">Загрузите файл для перевода</div>
+              <p className="empty-message">Загрузите файл для перевода</p>
             ) : (
               segments.map((segment, index) => (
                 <div
                   key={segment.id}
-                  className={`segment-item ${segment.id === selectedSegmentId ? 'selected' : ''} 
-                    ${segment.status === 'edited' ? 'edited' : ''}`}
+                  className={`segment-item ${segment.id === selectedSegmentId ? 'selected' : ''} ${
+                    segment.status === 'edited' ? 'edited' : ''
+                  }`}
                   onClick={() => handleSegmentClick(segment)}
                   onDoubleClick={() => startEditing(segment)}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Сегмент ${index + 1}: двойной клик для редактирования`}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSegmentClick(segment);
+                    if (e.key === 'F2') startEditing(segment);
+                  }}
                 >
                   <div className="segment-header">
                     <span className="segment-index">#{index + 1}</span>
                     <div className="segment-actions">
                       {editingSegmentId === segment.id ? (
                         <>
-                          <button 
+                          <button
                             className="btn-small btn-save"
                             onClick={(e) => {
                               e.stopPropagation();
                               saveCurrentEdit();
                             }}
+                            aria-label="Сохранить"
                           >
                             ✓
                           </button>
-                          <button 
+                          <button
                             className="btn-small btn-cancel"
                             onClick={(e) => {
                               e.stopPropagation();
                               cancelEditing();
                             }}
+                            aria-label="Отмена"
                           >
                             ✕
                           </button>
                         </>
                       ) : (
-                        <button 
+                        <button
                           className="btn-small btn-edit"
                           onClick={(e) => {
                             e.stopPropagation();
                             startEditing(segment);
                           }}
+                          aria-label="Редактировать сегмент"
                         >
                           ✎
                         </button>
@@ -407,11 +518,18 @@ export default function TranslatorEditor() {
                           autoFocus
                           rows={3}
                           placeholder="Введите исправленный перевод..."
+                          aria-label="Редактор перевода"
                         />
                       </div>
                     ) : (
-                      <div className={`translation-text ${segment.status === 'edited' ? 'edited-text' : ''}`}>
-                        {segment.translated_text || <span className="empty-translation">Нет перевода</span>}
+                      <div
+                        className={`translation-text ${
+                          segment.status === 'edited' ? 'edited-text' : ''
+                        }`}
+                      >
+                        {segment.translated_text || (
+                          <span className="empty-translation">Нет перевода</span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -419,17 +537,17 @@ export default function TranslatorEditor() {
               ))
             )}
           </div>
-        </div>
+        </section>
       </div>
 
       {/* Диалог сохранения */}
       {showSaveDialog && (
-        <div className="save-dialog-overlay">
+        <div className="save-dialog-overlay" role="dialog" aria-modal="true" aria-labelledby="save-dialog-title">
           <div className="save-dialog">
-            <h3>Сохранить изменения?</h3>
+            <h2 id="save-dialog-title">Сохранить изменения?</h2>
             <p>Вы изменили перевод. Хотите сохранить исправление?</p>
             <div className="dialog-buttons">
-              <button 
+              <button
                 className="btn-secondary"
                 onClick={() => {
                   setShowSaveDialog(false);
@@ -438,16 +556,10 @@ export default function TranslatorEditor() {
               >
                 Отмена
               </button>
-              <button 
-                className="btn-primary"
-                onClick={() => handleSave(false)}
-              >
+              <button className="btn-primary" onClick={() => handleSave(false)}>
                 Просто сохранить
               </button>
-              <button 
-                className="btn-termbase"
-                onClick={() => handleSave(true)}
-              >
+              <button className="btn-termbase" onClick={() => handleSave(true)}>
                 Сохранить и добавить в терминологическую базу
               </button>
             </div>
