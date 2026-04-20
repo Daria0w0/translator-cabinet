@@ -1,29 +1,5 @@
-import axios from 'axios';
+import apiClient from './apiClient';
 import { User } from '../contexts/AuthContext';
-import { message } from 'antd';
-
-const API_URL = 'http://localhost:8000';
-
-const api = axios.create({
-  baseURL: API_URL,
-});
-
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    const errorMessage = error.response?.data?.detail || 'Произошла ошибка';
-    message.error(errorMessage);
-    return Promise.reject(error);
-  }
-);
-
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('access_token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
 
 export interface LoginData {
   email: string;
@@ -39,19 +15,43 @@ export interface RegisterData {
   is_editor: boolean;
 }
 
+export interface AuthTokens {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  user: User;
+}
+
 export const authService = {
-  async login(email: string, password: string) {
-    const response = await api.post('/api/auth/login', { email, password });
+  async login(email: string, password: string): Promise<User> {
+    const response = await apiClient.post<User>('/api/auth/login', { email, password });
     return response.data;
   },
 
-  async register(userData: RegisterData) {
-    const response = await api.post('/api/auth/register', userData);
+  async register(userData: RegisterData): Promise<User> {
+    const response = await apiClient.post<User>('/api/auth/register', userData);
     return response.data;
+  },
+
+  async refresh(): Promise<void> {
+    await apiClient.post('/api/auth/refresh');
+  },
+
+  async logout(): Promise<void> {
+    await apiClient.post('/api/auth/logout');
+  },
+
+  async logoutAll(): Promise<void> {
+    await apiClient.post('/api/auth/logout-all');
   },
 
   async getProfile(): Promise<User> {
-    const response = await api.get('/api/auth/me');
+    const response = await apiClient.get<User>('/api/auth/me');
+    return response.data;
+  },
+
+  async checkAuth(): Promise<{ authenticated: boolean; user: User }> {
+    const response = await apiClient.get('/api/auth/check');
     return response.data;
   },
 };

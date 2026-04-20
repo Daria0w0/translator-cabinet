@@ -9,6 +9,11 @@ import './pages/styles/Projects.css';
 import './pages/styles/UserProfile.css';
 import './pages/styles/Common.css';
 import './pages/styles/TranslatorEditor.css';
+import './pages/styles/Home.css';
+import './pages/styles/AdminUserProjects.css';
+import './pages/styles/AdminDashboard.css';
+import './pages/styles/Blocked.css';
+import './pages/styles/seo.css';
 
 const root = ReactDOM.createRoot(
   document.getElementById('root') as HTMLElement

@@ -1,7 +1,13 @@
 from datetime import datetime, timezone
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, Enum as SQLAlchemyEnum
 from sqlalchemy.orm import relationship
-from app.database import Base 
+from app.database import Base
+import enum
+from sqlalchemy.orm import relationship, backref
+
+class UserRole(str, enum.Enum):
+    USER = "user"
+    ADMIN = "admin"
 
 class User(Base):
     __tablename__ = "users"
@@ -13,12 +19,19 @@ class User(Base):
     full_name = Column(String(200))
     is_translator = Column(Boolean, default=False)
     is_editor = Column(Boolean, default=False)
+    role = Column(SQLAlchemyEnum(UserRole), default=UserRole.USER, nullable=False)
     is_active = Column(Boolean, default=True)
+    is_blocked = Column(Boolean, default=False)
+    blocked_at = Column(DateTime, nullable=True)
+    blocked_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     projects = relationship("Project", back_populates="owner", cascade="all, delete-orphan")
+    
+    blocker = relationship("User", foreign_keys=[blocked_by], remote_side=[id])
 
 class Project(Base):
-    __tablename__ = "projects" 
+    __tablename__ = "projects"
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
@@ -32,6 +45,21 @@ class Project(Base):
     
     owner = relationship("User", back_populates="projects")
     files = relationship("ProjectFile", back_populates="project", cascade="all, delete-orphan")
+
+class ProjectFile(Base):
+    __tablename__ = "project_files"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String(255), nullable=False)
+    original_name = Column(String(255), nullable=False)
+    file_path = Column(String(500), nullable=False)
+    file_size = Column(Integer, nullable=False)
+    mime_type = Column(String(100))
+    uploaded_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    
+    project = relationship("Project", back_populates="files")
+    segments = relationship("DocumentSegment", back_populates="project_file", cascade="all, delete-orphan")
 
 class DocumentSegment(Base):
     __tablename__ = "document_segments"
@@ -51,17 +79,30 @@ class DocumentSegment(Base):
     translator = relationship("User", foreign_keys=[translator_id])
     editor = relationship("User", foreign_keys=[editor_id])
 
-class ProjectFile(Base):
-    __tablename__ = "project_files"
-    
+class TermEntry(Base):
+    __tablename__ = "term_entries"
+
     id = Column(Integer, primary_key=True, index=True)
-    filename = Column(String(255), nullable=False)
-    original_name = Column(String(255), nullable=False)
-    file_path = Column(String(500), nullable=False)
-    file_size = Column(Integer, nullable=False)
-    mime_type = Column(String(100))
-    uploaded_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
-    
-    project = relationship("Project", back_populates="files")
-    segments = relationship("DocumentSegment", back_populates="project_file", cascade="all, delete-orphan")
+    source_text = Column(Text, nullable=False)
+    target_text = Column(Text, nullable=False)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
+    occurrences = Column(Integer, default=1)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    project = relationship(
+        "Project",
+        backref=backref("term_entries", passive_deletes=True),
+    )
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token_hash = Column(String(255), unique=True, index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    is_revoked = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    replaced_by = Column(String(255), nullable=True) 
+    user = relationship("User", backref="refresh_tokens")
