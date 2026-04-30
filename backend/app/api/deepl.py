@@ -1,8 +1,3 @@
-"""
-Yandex Translate API endpoints.
-(kept as /api/deepl/ to avoid changing frontend routes)
-"""
-
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from typing import List

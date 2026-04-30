@@ -13,7 +13,12 @@ vi.mock('../services/apiClient', () => ({
 import apiClient from '../services/apiClient';
 import { authService } from '../services/authService';
 import { adminService } from '../services/adminService';
-import { getProjects, createProject, deleteProject, getProjectFiles } from '../services/api';
+import {
+  getProjects, createProject, deleteProject, getProjectFiles,
+  uploadProjectFile, deleteProjectFile, getFileContent,
+  getFileSegments, updateSegment, createSegment,
+  translateText, batchTranslateTexts, getProjectTerms,
+} from '../services/api';
 
 // ─── authService ──────────────────────────────────────────────
 
@@ -26,9 +31,7 @@ describe('authService', () => {
       is_translator: true, is_editor: false, is_active: true, is_blocked: false,
     };
     vi.mocked(apiClient.post).mockResolvedValueOnce({ data: mockUser });
-
     const result = await authService.login('u@test.com', 'pass123');
-
     expect(vi.mocked(apiClient.post)).toHaveBeenCalledWith(
       '/api/auth/login',
       { email: 'u@test.com', password: 'pass123' },
@@ -179,5 +182,136 @@ describe('api.ts — проекты', () => {
     vi.mocked(apiClient.get).mockResolvedValueOnce({ data: [] });
     await getProjectFiles(3);
     expect(vi.mocked(apiClient.get)).toHaveBeenCalledWith('/api/projects/3/files');
+  });
+});
+
+
+describe('api.ts — файлы', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('uploadProjectFile вызывает POST /api/projects/:id/upload-file', async () => {
+    vi.mocked(apiClient.post).mockResolvedValueOnce({
+      data: { id: 1, filename: 'uuid.txt', original_name: 'test.txt', file_size: 100 },
+    });
+    const file = new File(['content'], 'test.txt', { type: 'text/plain' });
+    await uploadProjectFile(1, file);
+    expect(vi.mocked(apiClient.post)).toHaveBeenCalledWith(
+      '/api/projects/1/upload-file',
+      expect.any(FormData),
+      expect.objectContaining({ headers: { 'Content-Type': 'multipart/form-data' } }),
+    );
+  });
+
+  it('deleteProjectFile вызывает DELETE /api/projects/:id/files/:fileId', async () => {
+    vi.mocked(apiClient.delete).mockResolvedValueOnce({});
+    await deleteProjectFile(2, 7);
+    expect(vi.mocked(apiClient.delete)).toHaveBeenCalledWith('/api/projects/2/files/7');
+  });
+
+  it('getFileContent вызывает GET /api/projects/:id/files/:fileId/content', async () => {
+    vi.mocked(apiClient.get).mockResolvedValueOnce({
+      data: { content: 'hello world', type: 'text' },
+    });
+    const result = await getFileContent(3, 5);
+    expect(vi.mocked(apiClient.get)).toHaveBeenCalledWith('/api/projects/3/files/5/content');
+    expect(result.content).toBe('hello world');
+    expect(result.type).toBe('text');
+  });
+});
+
+
+describe('api.ts — сегменты', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('getFileSegments вызывает GET /api/projects/:id/files/:fileId/segments', async () => {
+    vi.mocked(apiClient.get).mockResolvedValueOnce({ data: [] });
+    await getFileSegments(1, 2);
+    expect(vi.mocked(apiClient.get)).toHaveBeenCalledWith('/api/projects/1/files/2/segments');
+  });
+
+  it('getFileSegments возвращает [] при 404', async () => {
+    vi.mocked(apiClient.get).mockRejectedValueOnce({ response: { status: 404 } });
+    const result = await getFileSegments(1, 2);
+    expect(result).toEqual([]);
+  });
+
+  it('getFileSegments пробрасывает не-404 ошибки', async () => {
+    vi.mocked(apiClient.get).mockRejectedValueOnce({ response: { status: 500 } });
+    await expect(getFileSegments(1, 2)).rejects.toMatchObject({ response: { status: 500 } });
+  });
+
+  it('updateSegment вызывает PUT /api/segments/:id', async () => {
+    vi.mocked(apiClient.put).mockResolvedValueOnce({
+      data: { id: 1, translated_text: 'Привет', status: 'translated' },
+    });
+    const result = await updateSegment(1, { translated_text: 'Привет', status: 'translated' });
+    expect(vi.mocked(apiClient.put)).toHaveBeenCalledWith(
+      '/api/segments/1',
+      expect.objectContaining({ translated_text: 'Привет' }),
+    );
+    expect(result.translated_text).toBe('Привет');
+  });
+
+  it('createSegment вызывает POST /api/segments/', async () => {
+    vi.mocked(apiClient.post).mockResolvedValueOnce({
+      data: { id: 5, original_text: 'Hi', status: 'new' },
+    });
+    const result = await createSegment({
+      project_file_id: 1, segment_index: 0, original_text: 'Hi', status: 'new',
+    });
+    expect(vi.mocked(apiClient.post)).toHaveBeenCalledWith('/api/segments/', expect.any(Object));
+    expect(result.id).toBe(5);
+  });
+});
+
+
+describe('api.ts — перевод', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('translateText вызывает POST /api/translation/translate', async () => {
+    vi.mocked(apiClient.post).mockResolvedValueOnce({ data: { translation: 'Привет' } });
+    const result = await translateText('Hello', 'eng_Latn', 'rus_Cyrl');
+    expect(result).toBe('Привет');
+    expect(vi.mocked(apiClient.post)).toHaveBeenCalledWith(
+      '/api/translation/translate',
+      { text: 'Hello', source_lang: 'eng_Latn', target_lang: 'rus_Cyrl' },
+    );
+  });
+
+  it('batchTranslateTexts вызывает POST /api/translation/batch', async () => {
+    vi.mocked(apiClient.post).mockResolvedValueOnce({
+      data: { translations: ['Привет', 'Мир'] },
+    });
+    const result = await batchTranslateTexts(['Hello', 'World'], 'eng_Latn', 'rus_Cyrl');
+    expect(result).toHaveLength(2);
+    expect(result[0]).toBe('Привет');
+  });
+
+  it('batchTranslateTexts возвращает [] если translations отсутствует в ответе', async () => {
+    vi.mocked(apiClient.post).mockResolvedValueOnce({ data: {} });
+    const result = await batchTranslateTexts(['Hi'], 'eng_Latn', 'rus_Cyrl');
+    expect(result).toEqual([]);
+  });
+});
+
+describe('api.ts — термины', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('getProjectTerms вызывает GET /api/projects/:id/terms', async () => {
+    vi.mocked(apiClient.get).mockResolvedValueOnce({ data: [] });
+    await getProjectTerms(3);
+    expect(vi.mocked(apiClient.get)).toHaveBeenCalledWith(
+      '/api/projects/3/terms',
+      { params: {} },
+    );
+  });
+
+  it('getProjectTerms передаёт search параметр', async () => {
+    vi.mocked(apiClient.get).mockResolvedValueOnce({ data: [] });
+    await getProjectTerms(3, 'cat');
+    expect(vi.mocked(apiClient.get)).toHaveBeenCalledWith(
+      '/api/projects/3/terms',
+      { params: { search: 'cat' } },
+    );
   });
 });

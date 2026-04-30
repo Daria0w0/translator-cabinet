@@ -53,7 +53,7 @@ export default function Projects() {
   const loadProjects = async () => {
     try {
       const response = await getProjects();
-      const projectsData = Array.isArray(response) ? response : response.items;
+      const projectsData = Array.isArray(response) ? response : (response as { items: Project[] }).items;
       setProjects(projectsData);
     } catch (error) {
       console.error('Ошибка:', error);
