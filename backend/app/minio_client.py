@@ -6,10 +6,10 @@ from typing import Optional
 class MinioClient:
     def __init__(self):
         self.client = Minio(
-            "localhost:9000",
-            access_key="minioadmin",
-            secret_key="minioadmin",
-            secure=False
+            os.getenv("MINIO_ENDPOINT", "localhost:9000"),
+            access_key=os.getenv("MINIO_ACCESS_KEY", "minioadmin"),
+            secret_key=os.getenv("MINIO_SECRET_KEY", "minioadmin"),
+            secure=os.getenv("MINIO_SECURE", "false").lower() == "true"
         )
         self.bucket_name = "translations"
         self.setup_bucket()
