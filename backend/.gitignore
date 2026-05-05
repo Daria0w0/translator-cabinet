@@ -16,3 +16,11 @@ temp_downloads/
 ~/.cache/huggingface/
 # Model weights
 app/translation_model/
+# Нейронная сеть
+app/finetune/data/
+app/finetune/processed/
+app/finetune/__pycache__/
+app/finetune/check_files.py
+app/finetune/prepare_dataset.py
+app/finetune/train.py
+app/finetune/nllb_finetuned/checkpoint-*/

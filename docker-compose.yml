@@ -1,39 +1,128 @@
 version: '3.8'
 
-services:
-  postgres:
-    image: postgres:15
-    environment:
-      POSTGRES_DB: translator_db
-      POSTGRES_USER: translator_user
-      POSTGRES_PASSWORD: 12345
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-  pgadmin:
-    image: dpage/pgadmin4
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@admin.com
-      PGADMIN_DEFAULT_PASSWORD: admin
-    ports:
-      - "5050:80"
-    depends_on:
-      - postgres
-
-  minio:
-    image: minio/minio
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    command: server /data --console-address ":9001"
-    volumes:
-      - minio_data:/data
+networks:
+  app_net:
+    driver: bridge
 
 volumes:
   postgres_data:
   minio_data:
+
+services:
+
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:-translator_db}
+      POSTGRES_USER:     ${POSTGRES_USER:-translator_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-translator_user} -d ${POSTGRES_DB:-translator_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    # Expose only in dev; remove/comment out in production
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER:     ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+    volumes:
+      - minio_data:/data
+    networks:
+      - app_net
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"    # S3 API
+      - "${MINIO_CONSOLE_PORT:-9001}:9001" # Web console
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL:       postgresql://${POSTGRES_USER:-translator_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-translator_db}
+      MINIO_ENDPOINT:     minio:9000
+      MINIO_ACCESS_KEY:   ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY:   ${MINIO_ROOT_PASSWORD}
+      MINIO_SECURE:       "false"
+      JWT_SECRET_KEY:     ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
+      SITE_URL:           ${SITE_URL:-http://localhost}
+      YANDEX_API_KEY:     ${YANDEX_API_KEY:-}
+      YANDEX_FOLDER_ID:   ${YANDEX_FOLDER_ID:-}
+      YANDEX_TIMEOUT:     ${YANDEX_TIMEOUT:-10}
+      YANDEX_MAX_RETRIES: ${YANDEX_MAX_RETRIES:-3}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - app_net
+    volumes:
+      - ./data/uploads:/app/uploads
+      - ./data/temp_uploads:/app/temp_uploads
+      - ./data/temp_downloads:/app/temp_downloads
+      - ./backend/app/finetune:/app/app/finetune:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    expose:
+      - "8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - app_net
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL:    ${PGADMIN_EMAIL:-admin@admin.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app_net
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    profiles:
+      - dev
